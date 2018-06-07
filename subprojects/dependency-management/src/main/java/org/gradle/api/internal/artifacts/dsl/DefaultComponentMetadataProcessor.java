@@ -34,15 +34,19 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.UserProvidedMetad
 import org.gradle.api.internal.artifacts.repositories.resolver.ComponentMetadataDetailsAdapter;
 import org.gradle.api.internal.artifacts.repositories.resolver.DependencyConstraintMetadataImpl;
 import org.gradle.api.internal.artifacts.repositories.resolver.DirectDependencyMetadataImpl;
+import org.gradle.api.internal.artifacts.repositories.resolver.VariantRecordingComponentMetadataDetailsAdapter;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.internal.action.ConfigurableRule;
 import org.gradle.internal.action.DefaultConfigurableRules;
 import org.gradle.internal.action.InstantiatingAction;
+import org.gradle.internal.component.external.model.DefaultMutableIvyModuleResolveMetadata;
+import org.gradle.internal.component.external.model.DefaultMutableMavenModuleResolveMetadata;
 import org.gradle.internal.component.external.model.IvyModuleResolveMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
 import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
+import org.gradle.internal.component.external.model.RealisedIvyModuleResolveMetadata;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 import org.gradle.internal.resolve.caching.ComponentMetadataRuleExecutor;
@@ -51,6 +55,7 @@ import org.gradle.internal.rules.SpecRuleAction;
 import org.gradle.internal.typeconversion.NotationParser;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -59,7 +64,20 @@ public class DefaultComponentMetadataProcessor implements ComponentMetadataProce
     private static final Transformer<ModuleComponentResolveMetadata, WrappingComponentMetadataContext> DETAILS_TO_RESULT = new Transformer<ModuleComponentResolveMetadata, WrappingComponentMetadataContext>() {
             @Override
             public ModuleComponentResolveMetadata transform(WrappingComponentMetadataContext componentMetadataContext) {
-                return componentMetadataContext.getMutableMetadata().asImmutable();
+                Set<String> seenVariants = Collections.emptySet();
+                boolean allVariantsUsed = false;
+                VariantRecordingComponentMetadataDetailsAdapter rawDetails = componentMetadataContext.getRawDetails();
+                if (rawDetails != null) {
+                    seenVariants = rawDetails.getSeenVariants();
+                    allVariantsUsed = rawDetails.isAllVariantsUsed();
+                }
+                MutableModuleComponentResolveMetadata mutableMetadata = componentMetadataContext.getMutableMetadata();
+                if (mutableMetadata instanceof DefaultMutableIvyModuleResolveMetadata) {
+                    return RealisedIvyModuleResolveMetadata.transform((DefaultMutableIvyModuleResolveMetadata) mutableMetadata, seenVariants, allVariantsUsed);
+                } else if (mutableMetadata instanceof DefaultMutableMavenModuleResolveMetadata) {
+
+                }
+                return mutableMetadata.asImmutable();
             }
         };
 

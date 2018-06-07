@@ -17,7 +17,10 @@
 package org.gradle.api.internal.artifacts.ivyservice.modulecache;
 
 import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
+import org.gradle.internal.component.external.model.DefaultIvyModuleResolveMetadata;
+import org.gradle.internal.component.external.model.MavenModuleResolveMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
+import org.gradle.internal.component.external.model.RealisedIvyModuleResolveMetadata;
 import org.gradle.internal.serialize.AbstractSerializer;
 import org.gradle.internal.serialize.Decoder;
 import org.gradle.internal.serialize.Encoder;
@@ -42,6 +45,26 @@ public class ModuleComponentResolveMetadataSerializer extends AbstractSerializer
 
     @Override
     public void write(Encoder encoder, ModuleComponentResolveMetadata value) throws Exception {
+        ModuleComponentResolveMetadata toSerialize = prepareForSerialization(value);
         delegate.write(encoder, value);
+    }
+
+    private ModuleComponentResolveMetadata prepareForSerialization(ModuleComponentResolveMetadata metadata) {
+        if (metadata instanceof DefaultIvyModuleResolveMetadata) {
+            return prepareForSerializationIvy((DefaultIvyModuleResolveMetadata) metadata);
+        } else if (metadata instanceof MavenModuleResolveMetadata) {
+            return prepareForSerializationMaven((MavenModuleResolveMetadata) metadata);
+        } else {
+            throw new IllegalArgumentException("Unexpected metadata type: " + metadata.getClass());
+        }
+
+    }
+
+    private ModuleComponentResolveMetadata prepareForSerializationMaven(MavenModuleResolveMetadata metadata) {
+        throw new UnsupportedOperationException("Implement me!");
+    }
+
+    private ModuleComponentResolveMetadata prepareForSerializationIvy(DefaultIvyModuleResolveMetadata metadata) {
+        return new RealisedIvyModuleResolveMetadata(metadata);
     }
 }

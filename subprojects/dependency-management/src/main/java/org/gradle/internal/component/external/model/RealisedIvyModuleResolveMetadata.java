@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,17 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gradle.internal.component.external.model;
 
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.internal.artifacts.ivyservice.NamespaceId;
-import org.gradle.api.internal.attributes.AttributeContainerInternal;
-import org.gradle.api.internal.attributes.AttributesSchemaInternal;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.component.external.descriptor.Artifact;
 import org.gradle.internal.component.external.descriptor.Configuration;
 import org.gradle.internal.component.model.ConfigurationMetadata;
@@ -34,34 +35,52 @@ import org.gradle.util.CollectionUtils;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponentResolveMetadata implements IvyModuleResolveMetadata {
+public class RealisedIvyModuleResolveMetadata extends AbstractRealisedModuleComponentResolveMetadata implements IvyModuleResolveMetadata {
     private static final PreferJavaRuntimeVariant SCHEMA_DEFAULT_JAVA_VARIANTS = PreferJavaRuntimeVariant.schema();
+
+    public static RealisedIvyModuleResolveMetadata transform(DefaultMutableIvyModuleResolveMetadata mutableMetadata, Set<String> seenVariants, boolean allVariantsUsed) {
+        HashSet<String> remainingVariants = Sets.newHashSet(seenVariants);
+        ImmutableList<? extends ComponentVariant> variants = enrichVariants(mutableMetadata, remainingVariants);
+        Map<String, ImmutableAttributes> potentialVariantToAttributesMap = Maps.newHashMapWithExpectedSize(remainingVariants.size());
+        for (String variant : remainingVariants) {
+            ImmutableAttributes variantAttributes = mutableMetadata.getVariantMetadataRules().applyVariantAttributeRules(new NameOnlyVariantResolveMetadata(variant), ImmutableAttributes.EMPTY);
+            potentialVariantToAttributesMap.put(variant, variantAttributes);
+        }
+        ImmutableAttributes allVariantsAttributes;
+        if (allVariantsUsed) {
+            allVariantsAttributes = mutableMetadata.getVariantMetadataRules().applyVariantAttributeRules(new NameOnlyVariantResolveMetadata(ALL_VARIANTS_NAME), ImmutableAttributes.EMPTY);
+        } else {
+            allVariantsAttributes = ImmutableAttributes.EMPTY;
+        }
+        return new RealisedIvyModuleResolveMetadata(mutableMetadata, variants, potentialVariantToAttributesMap, allVariantsAttributes);
+    }
+
     private final ImmutableMap<String, Configuration> configurationDefinitions;
     private final ImmutableList<IvyDependencyDescriptor> dependencies;
     private final ImmutableList<Artifact> artifactDefinitions;
     private final ImmutableList<Exclude> excludes;
     private final ImmutableMap<NamespaceId, String> extraAttributes;
     private final String branch;
-    // Since a single `Artifact` is shared between configurations, share the metadata type as well.
     private Map<Artifact, ModuleComponentArtifactMetadata> artifacts;
 
-    DefaultIvyModuleResolveMetadata(DefaultMutableIvyModuleResolveMetadata metadata) {
+    public RealisedIvyModuleResolveMetadata(RealisedIvyModuleResolveMetadata metadata, List<IvyDependencyDescriptor> dependencies) {
         super(metadata);
         this.configurationDefinitions = metadata.getConfigurationDefinitions();
         this.branch = metadata.getBranch();
         this.artifactDefinitions = metadata.getArtifactDefinitions();
-        this.dependencies = metadata.getDependencies();
+        this.dependencies = ImmutableList.copyOf(dependencies);
         this.excludes = metadata.getExcludes();
         this.extraAttributes = metadata.getExtraAttributes();
     }
 
-    private DefaultIvyModuleResolveMetadata(DefaultIvyModuleResolveMetadata metadata, ModuleSource source) {
+    public RealisedIvyModuleResolveMetadata(RealisedIvyModuleResolveMetadata metadata, ModuleSource source) {
         super(metadata, source);
         this.configurationDefinitions = metadata.configurationDefinitions;
         this.branch = metadata.branch;
@@ -73,20 +92,18 @@ public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponent
         copyCachedState(metadata);
     }
 
-    private DefaultIvyModuleResolveMetadata(DefaultIvyModuleResolveMetadata metadata, List<IvyDependencyDescriptor> dependencies) {
-        super(metadata, metadata.getSource());
-        this.configurationDefinitions = metadata.configurationDefinitions;
-        this.branch = metadata.branch;
-        this.artifactDefinitions = metadata.artifactDefinitions;
-        this.dependencies = ImmutableList.copyOf(dependencies);
-        this.excludes = metadata.excludes;
-        this.extraAttributes = metadata.extraAttributes;
-
-        // Cached state is not copied, since dependency inputs are different.
+    public RealisedIvyModuleResolveMetadata(DefaultMutableIvyModuleResolveMetadata mutableMetadata, ImmutableList<? extends ComponentVariant> variants, Map<String, ImmutableAttributes> potentialVariantToAttributesMap, ImmutableAttributes allVariantsAttributes) {
+        super(mutableMetadata, variants, potentialVariantToAttributesMap, allVariantsAttributes);
+        this.configurationDefinitions = mutableMetadata.getConfigurationDefinitions();
+        this.branch = mutableMetadata.getBranch();
+        this.artifactDefinitions = mutableMetadata.getArtifactDefinitions();
+        this.dependencies = mutableMetadata.getDependencies();
+        this.excludes = mutableMetadata.getExcludes();
+        this.extraAttributes = mutableMetadata.getExtraAttributes();
     }
 
     @Override
-    protected DefaultConfigurationMetadata createConfiguration(ModuleComponentIdentifier componentId, String name, boolean transitive, boolean visible, ImmutableList<String> hierarchy, VariantMetadataRules componentMetadataRules) {
+    protected RealisedConfigurationMetadata createConfiguration(ModuleComponentIdentifier componentId, String name, boolean transitive, boolean visible, ImmutableList<String> hierarchy, Map<String, ImmutableAttributes> potentialVariantToAttributesMap, ImmutableAttributes allVariantsAttributes) {
         if (artifacts == null) {
             artifacts = new IdentityHashMap<Artifact, ModuleComponentArtifactMetadata>();
         }
@@ -94,19 +111,27 @@ public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponent
         ImmutableList<ModuleComponentArtifactMetadata> artifacts = configurationHelper.filterArtifacts(name, hierarchy);
         ImmutableList<ExcludeMetadata> excludesForConfiguration = configurationHelper.filterExcludes(hierarchy);
 
-        DefaultConfigurationMetadata configuration = new DefaultConfigurationMetadata(componentId, name, transitive, visible, hierarchy, ImmutableList.copyOf(artifacts), componentMetadataRules, excludesForConfiguration, getAttributes().asImmutable());
+        RealisedConfigurationMetadata configuration = new RealisedConfigurationMetadata(componentId, name, transitive, visible, hierarchy, ImmutableList.copyOf(artifacts), excludesForConfiguration, getAttributes().asImmutable());
         configuration.setDependencies(configurationHelper.filterDependencies(configuration));
         return configuration;
     }
 
     @Override
-    public DefaultIvyModuleResolveMetadata withSource(ModuleSource source) {
-        return new DefaultIvyModuleResolveMetadata(this, source);
+    public MutableIvyModuleResolveMetadata asMutable() {
+        // TODO LJA
+//        return new RealisedMutableIvyModuleResolveMetadata(this);
+        return null;
     }
 
     @Override
-    public MutableIvyModuleResolveMetadata asMutable() {
-        return new DefaultMutableIvyModuleResolveMetadata(this);
+    public IvyModuleResolveMetadata withSource(ModuleSource source) {
+        return new RealisedIvyModuleResolveMetadata(this, source);
+    }
+
+    @Nullable
+    @Override
+    public String getBranch() {
+        return branch;
     }
 
     @Override
@@ -124,10 +149,7 @@ public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponent
         return excludes;
     }
 
-    public String getBranch() {
-        return branch;
-    }
-
+    @Override
     public ImmutableMap<NamespaceId, String> getExtraAttributes() {
         return extraAttributes;
     }
@@ -138,22 +160,12 @@ public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponent
             @Override
             public IvyDependencyDescriptor transform(IvyDependencyDescriptor dependency) {
                 ModuleComponentSelector selector = dependency.getSelector();
-                    String dynamicConstraintVersion = dependency.getDynamicConstraintVersion();
-                    ModuleComponentSelector newSelector = DefaultModuleComponentSelector.newSelector(selector.getGroup(), selector.getModule(), dynamicConstraintVersion);
-                    return dependency.withRequested(newSelector);
+                String dynamicConstraintVersion = dependency.getDynamicConstraintVersion();
+                ModuleComponentSelector newSelector = DefaultModuleComponentSelector.newSelector(selector.getGroup(), selector.getModule(), dynamicConstraintVersion);
+                return dependency.withRequested(newSelector);
             }
         });
         return this.withDependencies(transformed);
-    }
-
-    private IvyModuleResolveMetadata withDependencies(List<IvyDependencyDescriptor> transformed) {
-        return new DefaultIvyModuleResolveMetadata(this, transformed);
-    }
-
-    @Nullable
-    @Override
-    public AttributesSchemaInternal getAttributesSchema() {
-        return SCHEMA_DEFAULT_JAVA_VARIANTS;
     }
 
     @Override
@@ -161,35 +173,8 @@ public class DefaultIvyModuleResolveMetadata extends AbstractLazyModuleComponent
         return dependencies;
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-
-        DefaultIvyModuleResolveMetadata that = (DefaultIvyModuleResolveMetadata) o;
-        return Objects.equal(dependencies, that.dependencies)
-            && Objects.equal(artifactDefinitions, that.artifactDefinitions)
-            && Objects.equal(excludes, that.excludes)
-            && Objects.equal(extraAttributes, that.extraAttributes)
-            && Objects.equal(branch, that.branch)
-            && Objects.equal(artifacts, that.artifacts);
+    private IvyModuleResolveMetadata withDependencies(List<IvyDependencyDescriptor> transformed) {
+        return new RealisedIvyModuleResolveMetadata(this, transformed);
     }
 
-    @Override
-    public int hashCode() {
-        return Objects.hashCode(super.hashCode(),
-            dependencies,
-            artifactDefinitions,
-            excludes,
-            extraAttributes,
-            branch,
-            artifacts);
-    }
 }

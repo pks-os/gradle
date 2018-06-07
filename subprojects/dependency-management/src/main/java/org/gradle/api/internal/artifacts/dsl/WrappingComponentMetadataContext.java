@@ -23,11 +23,14 @@ import org.gradle.api.internal.artifacts.ivyservice.DefaultIvyModuleDescriptor;
 import org.gradle.api.internal.artifacts.repositories.resolver.ComponentMetadataDetailsAdapter;
 import org.gradle.api.internal.artifacts.repositories.resolver.DependencyConstraintMetadataImpl;
 import org.gradle.api.internal.artifacts.repositories.resolver.DirectDependencyMetadataImpl;
+import org.gradle.api.internal.artifacts.repositories.resolver.VariantRecordingComponentMetadataDetailsAdapter;
 import org.gradle.internal.component.external.model.IvyModuleResolveMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
 import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.typeconversion.NotationParser;
+
+import javax.annotation.Nullable;
 
 class WrappingComponentMetadataContext implements ComponentMetadataContext {
 
@@ -38,7 +41,7 @@ class WrappingComponentMetadataContext implements ComponentMetadataContext {
     private final NotationParser<Object, DependencyConstraintMetadataImpl> dependencyConstraintMetadataNotationParser;
 
     private MutableModuleComponentResolveMetadata mutableMetadata;
-    private ComponentMetadataDetails details;
+    private VariantRecordingComponentMetadataDetailsAdapter details;
 
     public WrappingComponentMetadataContext(ModuleComponentResolveMetadata metadata, Instantiator instantiator,
                                             NotationParser<Object, DirectDependencyMetadataImpl> dependencyMetadataNotationParser,
@@ -60,11 +63,16 @@ class WrappingComponentMetadataContext implements ComponentMetadataContext {
         return null;
     }
 
+    @Nullable
+    public VariantRecordingComponentMetadataDetailsAdapter getRawDetails() {
+        return details;
+    }
+
     @Override
     public ComponentMetadataDetails getDetails() {
         createMutableMetadataIfNeeded();
         if (details == null) {
-            details = instantiator.newInstance(ComponentMetadataDetailsAdapter.class, mutableMetadata, instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser);
+            details = instantiator.newInstance(VariantRecordingComponentMetadataDetailsAdapter.class, mutableMetadata, instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser);
 
         }
         return details;
