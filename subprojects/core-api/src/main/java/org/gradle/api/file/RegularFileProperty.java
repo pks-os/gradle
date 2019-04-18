@@ -17,27 +17,51 @@
 package org.gradle.api.file;
 
 import org.gradle.api.Incubating;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
 /**
- * Represents some configurable regular file location, whose value is mutable and not necessarily currently known until later.
+ * Represents some configurable regular file location, whose value is mutable.
+ *
  * <p>
- * <b>Note:</b> This interface is not intended for implementation by build script or plugin authors. An instance of this class can be created using the {@link ProjectLayout#fileProperty()} method.
+ * You can create a {@link RegularFileProperty} using {@link ObjectFactory#fileProperty()}.
+ * </p>
+ *
+ * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.</p>
  *
  * @since 4.3
  */
 @Incubating
-public interface RegularFileProperty extends Provider<RegularFile>, Property<RegularFile> {
+public interface RegularFileProperty extends Property<RegularFile> {
     /**
      * Views the location of this file as a {@link File}.
      */
     Provider<File> getAsFile();
 
     /**
-     * Sets the location of this file.
+     * Sets the location of this file, using a {@link File} instance.
      */
-    void set(File file);
+    void set(@Nullable File file);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    RegularFileProperty value(RegularFile value);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    RegularFileProperty convention(RegularFile value);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    RegularFileProperty convention(Provider<? extends RegularFile> valueProvider);
 }

@@ -24,7 +24,6 @@ import org.gradle.internal.operations.OperationIdentifier;
 import org.gradle.internal.scan.UsedByScanPlugin;
 
 import javax.annotation.Nullable;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -65,6 +64,11 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
         return new StyledTextOutputEvent(getTimestamp(), getCategory(), logLevel, getBuildOperationId(), spans);
     }
 
+    @Override
+    public StyledTextOutputEvent withBuildOperationId(OperationIdentifier buildOperationId) {
+        return new StyledTextOutputEvent(getTimestamp(), getCategory(), getLogLevel(), buildOperationId, spans);
+    }
+
     public List<Span> getSpans() {
         return spans;
     }
@@ -78,7 +82,7 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
     }
 
     @UsedByScanPlugin
-    public static class Span implements StyledTextBuildOperationProgressDetails.Span, Serializable {
+    public static class Span implements StyledTextBuildOperationProgressDetails.Span {
         private final String text;
         private final StyledTextOutput.Style style;
 
@@ -92,6 +96,23 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
             this.text = text;
         }
 
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj == null || obj.getClass() != getClass()) {
+                return false;
+            }
+            Span other = (Span) obj;
+            return text.equals(other.text) && style.equals(other.style);
+        }
+
+        @Override
+        public int hashCode() {
+            return text.hashCode() ^ style.hashCode();
+        }
+
         public StyledTextOutput.Style getStyle() {
             return style;
         }
@@ -103,6 +124,11 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
 
         public String getText() {
             return text;
+        }
+
+        @Override
+        public String toString() {
+            return style.toString() + ":" + text;
         }
     }
 }

@@ -32,6 +32,14 @@ public class LayoutCommandLineConverter extends AbstractCommandLineConverter<Bui
             option.applyFromCommandLine(options, target);
         }
 
+        if (options.getExtraArguments().contains("init")) {
+            target.setSearchUpwards(false);
+        }
+
+        if (target.getSearchDir().getName().equals("buildSrc")) {
+            target.setSearchUpwards(false);
+        }
+
         return target;
     }
 

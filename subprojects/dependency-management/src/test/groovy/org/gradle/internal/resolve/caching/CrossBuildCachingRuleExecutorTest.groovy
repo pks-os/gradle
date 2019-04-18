@@ -21,21 +21,22 @@ import org.gradle.api.Action
 import org.gradle.api.Transformer
 import org.gradle.api.artifacts.CacheableRule
 import org.gradle.api.internal.artifacts.configurations.dynamicversion.CachePolicy
-import org.gradle.api.internal.changedetection.state.InMemoryCacheDecoratorFactory
-import org.gradle.api.internal.changedetection.state.StringValueSnapshot
-import org.gradle.api.internal.changedetection.state.ValueSnapshot
-import org.gradle.api.internal.changedetection.state.ValueSnapshotter
 import org.gradle.cache.CacheBuilder
 import org.gradle.cache.CacheDecorator
 import org.gradle.cache.CacheRepository
 import org.gradle.cache.PersistentCache
 import org.gradle.cache.PersistentIndexedCache
+import org.gradle.cache.internal.InMemoryCacheDecoratorFactory
 import org.gradle.internal.action.DefaultConfigurableRule
 import org.gradle.internal.action.DefaultConfigurableRules
 import org.gradle.internal.action.InstantiatingAction
+import org.gradle.internal.hash.Hashing
 import org.gradle.internal.reflect.Instantiator
 import org.gradle.internal.serialize.Serializer
 import org.gradle.internal.service.ServiceRegistry
+import org.gradle.internal.snapshot.ValueSnapshot
+import org.gradle.internal.snapshot.ValueSnapshotter
+import org.gradle.internal.snapshot.impl.StringValueSnapshot
 import org.gradle.util.BuildCommencedTimeProvider
 import org.gradle.util.TestUtil
 import spock.lang.Specification
@@ -147,7 +148,10 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         then:
         1 * valueSnapshotter.snapshot(_) >> {
             def snapshot = new StringValueSnapshot(it.toString())
-            1 * store.put(snapshot, _)
+            def hasher = Hashing.newHasher()
+            snapshot.appendToHasher(hasher)
+            def keyHash = hasher.hash()
+            1 * store.put(keyHash, _)
             snapshot
         }
         1 * store.get(_) >> null
@@ -178,6 +182,7 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
     void "if cache expired, re-executes the rule"() {
         withToUpperCaseRule()
         def snapshot
+        def keyHash
         def id = new Id('Alicia')
 
         when:
@@ -186,13 +191,16 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         then:
         1 * valueSnapshotter.snapshot(_) >> {
             snapshot = new StringValueSnapshot(it.toString())
+            def hasher = Hashing.newHasher()
+            snapshot.appendToHasher(hasher)
+            keyHash = hasher.hash()
             snapshot
         }
         1 * store.get(_) >> Stub(CrossBuildCachingRuleExecutor.CachedEntry) {
             getResult() >> new Result(length: 123)
         }
         1 * validator.isValid(_, _) >> false
-        1 * store.put({ it == snapshot }, { it.timestamp == timeProvider.currentTime })
+        1 * store.put({ it == keyHash }, { it.timestamp == timeProvider.currentTime })
         0 * _
         result.length == 6
     }
@@ -276,13 +284,13 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
     void withToUpperCaseRule() {
         rule = new InstantiatingAction<Details>(DefaultConfigurableRules.of(DefaultConfigurableRule.of(
             ToUpperCase
-        )), TestUtil.instantiatorFactory().decorate(), shouldNotFail())
+        )), TestUtil.instantiatorFactory().decorateLenient(), shouldNotFail())
     }
 
     void withNonCacheableToUpperCaseRule() {
         rule = new InstantiatingAction<Details>(DefaultConfigurableRules.of(DefaultConfigurableRule.of(
             ToUpperCaseNotCached
-        )), TestUtil.instantiatorFactory().decorate(), shouldNotFail())
+        )), TestUtil.instantiatorFactory().decorateLenient(), shouldNotFail())
     }
 
     void withServiceInjectedRule() {

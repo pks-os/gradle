@@ -15,9 +15,11 @@
  */
 package org.gradle.integtests.resolve.suppliers
 
+import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
 import org.gradle.integtests.fixtures.RequiredFeatures
+import org.gradle.integtests.fixtures.cache.CachingIntegrationFixture
 import org.gradle.integtests.resolve.AbstractModuleDependencyResolveTest
 import org.gradle.test.fixtures.HttpModule
 import org.gradle.test.fixtures.file.TestFile
@@ -28,7 +30,7 @@ import org.gradle.test.fixtures.server.http.MavenHttpModule
     // we only need to check without experimental, it doesn't depend on this flag
     @RequiredFeature(feature = GradleMetadataResolveRunner.EXPERIMENTAL_RESOLVE_BEHAVIOR, value = "false"),
 ])
-class DynamicRevisionRemoteResolveWithMetadataSupplierIntegrationTest extends AbstractModuleDependencyResolveTest {
+class DynamicRevisionRemoteResolveWithMetadataSupplierIntegrationTest extends AbstractModuleDependencyResolveTest implements CachingIntegrationFixture {
 
     def setup() {
         addDependenciesTo(buildFile)
@@ -842,7 +844,7 @@ group:projectB:2.2;release
                 }
                 '1.1' {
                     withModule {
-                        supplierInteractions.expectGetStatus(delegate, 'should be overriden by rule')
+                        supplierInteractions.expectGetStatus(delegate, 'should be overridden by rule')
 
                     }
                     expectResolve()
@@ -854,7 +856,7 @@ group:projectB:2.2;release
         then:
         outputContains 'Providing metadata for group:projectB:1.1'
         // first one comes from the rule executed on shallow metadata, provided by a rule
-        outputContains "Changing status for group:projectB:1.1 from 'should be overriden by rule' to 'release'"
+        outputContains "Changing status for group:projectB:1.1 from 'should be overridden by rule' to 'release'"
 
         // second one comes from the rule executed on "real" metadata, after parsing the module
         outputContains "Changing status for group:projectB:1.1 from '${GradleMetadataResolveRunner.useIvy()?'integration':'release'}' to 'release'"
@@ -927,7 +929,7 @@ group:projectB:2.2;release
         }
 
         then: "custom metadata rule prevented parsing of ivy descriptor"
-        checkResolve "group:projectA:1.+":["group:projectA:1.2", "didn't match version 2.0"], "group:projectB:latest.release": ["group:projectB:1.1", "version 2.2: Attribute 'custom string' didn't match. Requested 'v2', was: 'v1'"]
+        checkResolve "group:projectA:1.+":["group:projectA:1.2", "didn't match version 2.0"], "group:projectB:latest.release": ["group:projectB:1.1", "rejection: version 2.2:   - Attribute 'custom string' didn't match. Requested 'v2', was: 'v1'"]
         outputContains 'Providing metadata for group:projectB:2.2'
         outputContains 'Providing metadata for group:projectB:1.1'
 
@@ -980,7 +982,7 @@ group:projectB:2.2;release
         }
 
         then: "custom metadata rule prevented parsing of ivy descriptor"
-        checkResolve "group:projectA:1.+": ["group:projectA:1.2", "didn't match version 2.0"], "group:projectB:latest.release": ["group:projectB:1.1", "version 2.2: Attribute 'custom' didn't match. Requested 'v2', was: 'v1'"]
+        checkResolve "group:projectA:1.+": ["group:projectA:1.2", "didn't match version 2.0"], "group:projectB:latest.release": ["group:projectB:1.1", "rejection: version 2.2:   - Attribute 'custom' didn't match. Requested 'v2', was: 'v1'"]
         outputContains 'Providing metadata for group:projectB:2.2'
         outputContains 'Providing metadata for group:projectB:1.1'
 
@@ -1038,8 +1040,8 @@ group:projectB:2.2;release
 
         then:
         noExceptionThrown()
-        result.assertRawOutputContains "Found result for rule [DefaultConfigurableRule{rule=class MP, ruleParams=[]}] and key group:projectB:2.2"
-        result.assertRawOutputContains "Found result for rule [DefaultConfigurableRule{rule=class MP, ruleParams=[]}] and key group:projectB:1.1"
+        outputContains "Found result for rule [DefaultConfigurableRule{rule=class MP, ruleParams=[]}] and key group:projectB:2.2"
+        outputContains "Found result for rule [DefaultConfigurableRule{rule=class MP, ruleParams=[]}] and key group:projectB:1.1"
     }
 
     def "changing the implementation of a rule invalidates the cache"() {
@@ -1154,8 +1156,7 @@ group:projectB:2.2;release
         run '--stop'
         // bust the artifact cache because we don't want to fall into the smart behavior
         // of reusing metadata from cache for a different repository
-        new File(executer.gradleUserHomeDir, 'caches/modules-2').deleteDir()
-
+        getUserHomeCacheDir().file(CacheLayout.ROOT.getKey()).deleteDir()
         resetExpectations()
         // Changing the host makes Gradle consider that the 2 repositories are distinct
         buildFile.text = buildFile.text.replaceAll("(?m)http://localhost", "http://127.0.0.1")

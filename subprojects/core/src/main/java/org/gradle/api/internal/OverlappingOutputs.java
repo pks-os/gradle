@@ -16,12 +16,16 @@
 
 package org.gradle.api.internal;
 
-import org.gradle.api.internal.changedetection.state.FileCollectionSnapshot;
-import org.gradle.api.internal.changedetection.state.NormalizedFileSnapshot;
+import com.google.common.collect.ImmutableSortedMap;
 import org.gradle.internal.file.FileType;
+import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
+import org.gradle.internal.fingerprint.FileCollectionFingerprint;
+import org.gradle.internal.fingerprint.FileSystemLocationFingerprint;
+import org.gradle.internal.hash.HashCode;
 
 import javax.annotation.Nullable;
 import java.util.Map;
+import java.util.Optional;
 
 public class OverlappingOutputs {
     private final String propertyName;
@@ -32,33 +36,59 @@ public class OverlappingOutputs {
         this.overlappedFilePath = overlappedFilePath;
     }
 
-    @Nullable
-    public static OverlappingOutputs detect(String propertyName, FileCollectionSnapshot previousExecution, FileCollectionSnapshot beforeExecution) {
-        Map<String, NormalizedFileSnapshot> previousSnapshots = previousExecution.getSnapshots();
-        Map<String, NormalizedFileSnapshot> beforeSnapshots = beforeExecution.getSnapshots();
+    public static Optional<OverlappingOutputs> detect(ImmutableSortedMap<String, FileCollectionFingerprint> previous, ImmutableSortedMap<String, CurrentFileCollectionFingerprint> current) {
+        for (Map.Entry<String, CurrentFileCollectionFingerprint> entry : current.entrySet()) {
+            String propertyName = entry.getKey();
+            CurrentFileCollectionFingerprint beforeExecution = entry.getValue();
+            FileCollectionFingerprint afterPreviousExecution = getFingerprintAfterPreviousExecution(previous, propertyName);
+            OverlappingOutputs overlappingOutputs = OverlappingOutputs.detect(propertyName, afterPreviousExecution, beforeExecution);
+            if (overlappingOutputs != null) {
+                return Optional.of(overlappingOutputs);
+            }
+        }
+        return Optional.empty();
+    }
 
-        for (Map.Entry<String, NormalizedFileSnapshot> beforeSnapshot : beforeSnapshots.entrySet()) {
-            String path = beforeSnapshot.getKey();
-            NormalizedFileSnapshot fileSnapshot = beforeSnapshot.getValue();
-            NormalizedFileSnapshot previousSnapshot = previousSnapshots.get(path);
+    private static FileCollectionFingerprint getFingerprintAfterPreviousExecution(@Nullable ImmutableSortedMap<String, FileCollectionFingerprint> previous, String propertyName) {
+        if (previous != null) {
+            FileCollectionFingerprint afterPreviousExecution = previous.get(propertyName);
+            if (afterPreviousExecution != null) {
+                return afterPreviousExecution;
+            }
+        }
+        return FileCollectionFingerprint.EMPTY;
+    }
+
+
+    @Nullable
+    private static OverlappingOutputs detect(String propertyName, FileCollectionFingerprint previous, CurrentFileCollectionFingerprint before) {
+        Map<String, FileSystemLocationFingerprint> previousFingerprints = previous.getFingerprints();
+        Map<String, FileSystemLocationFingerprint> beforeFingerprints = before.getFingerprints();
+
+        for (Map.Entry<String, FileSystemLocationFingerprint> beforeEntry : beforeFingerprints.entrySet()) {
+            String path = beforeEntry.getKey();
+            FileSystemLocationFingerprint beforeFingerprint = beforeEntry.getValue();
+            HashCode contentHash = beforeFingerprint.getNormalizedContentHash();
+            FileSystemLocationFingerprint previousFingerprint = previousFingerprints.get(path);
+            HashCode previousContentHash = previousFingerprint == null ? null : previousFingerprint.getNormalizedContentHash();
             // Missing files can be ignored
-            if (fileSnapshot.getSnapshot().getType() != FileType.Missing) {
-                if (createdSincePreviousExecution(previousSnapshot) || changedSincePreviousExecution(fileSnapshot, previousSnapshot)) {
-                    return new OverlappingOutputs(propertyName, fileSnapshot.getNormalizedPath());
+            if (beforeFingerprint.getType() != FileType.Missing) {
+                if (createdSincePreviousExecution(previousContentHash) || changedSincePreviousExecution(contentHash, previousContentHash)) {
+                    return new OverlappingOutputs(propertyName, path);
                 }
             }
         }
         return null;
     }
 
-    private static boolean changedSincePreviousExecution(NormalizedFileSnapshot fileSnapshot, NormalizedFileSnapshot previousSnapshot) {
+    private static boolean changedSincePreviousExecution(HashCode contentHash, HashCode previousContentHash) {
         // _changed_ since last execution, possibly by another task
-        return !previousSnapshot.getSnapshot().isContentUpToDate(fileSnapshot.getSnapshot());
+        return !contentHash.equals(previousContentHash);
     }
 
-    private static boolean createdSincePreviousExecution(@Nullable NormalizedFileSnapshot previousSnapshot) {
+    private static boolean createdSincePreviousExecution(@Nullable HashCode previousContentHash) {
         // created since last execution, possibly by another task
-        return previousSnapshot == null;
+        return previousContentHash == null;
     }
 
     public String getPropertyName() {

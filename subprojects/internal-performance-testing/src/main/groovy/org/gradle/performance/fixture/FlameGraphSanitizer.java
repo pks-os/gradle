@@ -78,6 +78,7 @@ public class FlameGraphSanitizer {
     }
 
     public void sanitize(final File in, File out) {
+        out.getParentFile().mkdirs();
         IoActions.writeTextFile(out, new ErroringAction<BufferedWriter>() {
             @Override
             protected void doExecute(BufferedWriter writer) throws Exception {
@@ -230,7 +231,7 @@ public class FlameGraphSanitizer {
 
         @Override
         protected String mapFrame(String frame) {
-            int firstUpper = CharMatcher.JAVA_UPPER_CASE.indexIn(frame);
+            int firstUpper = CharMatcher.javaUpperCase().indexIn(frame);
             return frame.substring(Math.max(firstUpper, 0));
         }
     }

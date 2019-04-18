@@ -52,7 +52,8 @@ import java.util.concurrent.TimeUnit;
 import static org.gradle.api.internal.artifacts.configurations.MutationValidator.MutationType.STRATEGY;
 
 public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
-    private final Set<ModuleVersionSelector> forcedModules = new LinkedHashSet<ModuleVersionSelector>();
+    private final Set<Object> forcedModules = new LinkedHashSet<Object>();
+    private Set<ModuleVersionSelector> parsedForcedModules;
     private ConflictResolution conflictResolution = ConflictResolution.latest;
     private final DefaultComponentSelectionRules componentSelectionRules;
 
@@ -71,7 +72,7 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
     private static final String ASSUME_FLUID_DEPENDENCIES = "org.gradle.resolution.assumeFluidDependencies";
 
     public DefaultResolutionStrategy(DependencySubstitutionRules globalDependencySubstitutionRules, VcsResolver vcsResolver, ComponentIdentifierFactory componentIdentifierFactory, ImmutableModuleIdentifierFactory moduleIdentifierFactory, ComponentSelectorConverter componentSelectorConverter, DependencyLockingProvider dependencyLockingProvider) {
-        this(new DefaultCachePolicy(moduleIdentifierFactory), DefaultDependencySubstitutions.forResolutionStrategy(componentIdentifierFactory, moduleIdentifierFactory), globalDependencySubstitutionRules, vcsResolver, moduleIdentifierFactory, componentSelectorConverter, dependencyLockingProvider);
+        this(new DefaultCachePolicy(), DefaultDependencySubstitutions.forResolutionStrategy(componentIdentifierFactory, moduleIdentifierFactory), globalDependencySubstitutionRules, vcsResolver, moduleIdentifierFactory, componentSelectorConverter, dependencyLockingProvider);
     }
 
     DefaultResolutionStrategy(DefaultCachePolicy cachePolicy, DependencySubstitutionsInternal dependencySubstitutions, DependencySubstitutionRules globalDependencySubstitutionRules, VcsResolver vcsResolver, ImmutableModuleIdentifierFactory moduleIdentifierFactory, ComponentSelectorConverter componentSelectorConverter, DependencyLockingProvider dependencyLockingProvider) {
@@ -96,7 +97,10 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
     }
 
     public Set<ModuleVersionSelector> getForcedModules() {
-        return Collections.unmodifiableSet(forcedModules);
+        if (parsedForcedModules == null) {
+            parsedForcedModules = ModuleVersionSelectorParsers.multiParser().parseNotation(forcedModules);
+        }
+        return Collections.unmodifiableSet(parsedForcedModules);
     }
 
     public ResolutionStrategy failOnVersionConflict() {
@@ -132,8 +136,8 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
 
     public DefaultResolutionStrategy force(Object... moduleVersionSelectorNotations) {
         mutationValidator.validateMutation(STRATEGY);
-        Set<ModuleVersionSelector> modules = ModuleVersionSelectorParsers.multiParser().parseNotation(moduleVersionSelectorNotations);
-        this.forcedModules.addAll(modules);
+        parsedForcedModules = null;
+        Collections.addAll(forcedModules, moduleVersionSelectorNotations);
         return this;
     }
 
@@ -144,7 +148,8 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
     }
 
     public Action<DependencySubstitution> getDependencySubstitutionRule() {
-        Action<DependencySubstitution> moduleForcingResolveRule = Cast.uncheckedCast(forcedModules.isEmpty() ? Actions.doNothing() : new ModuleForcingResolveRule(forcedModules, moduleIdentifierFactory));
+        Set<ModuleVersionSelector> forcedModules = getForcedModules();
+        Action<DependencySubstitution> moduleForcingResolveRule = Cast.uncheckedCast(forcedModules.isEmpty() ? Actions.doNothing() : new ModuleForcingResolveRule(forcedModules));
         Action<DependencySubstitution> localDependencySubstitutionsAction = this.dependencySubstitutions.getRuleAction();
         Action<DependencySubstitution> globalDependencySubstitutionRulesAction = globalDependencySubstitutionRules.getRuleAction();
         //noinspection unchecked
@@ -159,12 +164,10 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
         return assumeFluidDependencies || dependencySubstitutions.hasRules() || globalDependencySubstitutionRules.hasRules() || vcsResolver.hasRules();
     }
 
-
-    public DefaultResolutionStrategy setForcedModules(Object ... moduleVersionSelectorNotations) {
+    public DefaultResolutionStrategy setForcedModules(Object... moduleVersionSelectorNotations) {
         mutationValidator.validateMutation(STRATEGY);
-        Set<ModuleVersionSelector> modules = ModuleVersionSelectorParsers.multiParser().parseNotation(moduleVersionSelectorNotations);
         this.forcedModules.clear();
-        this.forcedModules.addAll(modules);
+        force(moduleVersionSelectorNotations);
         return this;
     }
 
@@ -216,7 +219,7 @@ public class DefaultResolutionStrategy implements ResolutionStrategyInternal {
         } else if (conflictResolution == ConflictResolution.preferProjectModules) {
             out.preferProjectModules();
         }
-        out.setForcedModules(getForcedModules());
+        out.setForcedModules(forcedModules);
         for (SpecRuleAction<? super ComponentSelection> ruleAction : componentSelectionRules.getRules()) {
             out.getComponentSelection().addRule(ruleAction);
         }

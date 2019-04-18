@@ -17,12 +17,13 @@
 package org.gradle.integtests.fixtures.executer;
 
 import org.gradle.api.JavaVersion;
+import org.gradle.api.internal.artifacts.ivyservice.CacheLayout;
+import org.gradle.cache.internal.CacheVersion;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.test.fixtures.file.TestDirectoryProvider;
 import org.gradle.test.fixtures.file.TestFile;
 import org.gradle.util.GradleVersion;
-import org.gradle.util.VersionNumber;
 
 public class DefaultGradleDistribution implements GradleDistribution {
 
@@ -76,6 +77,10 @@ public class DefaultGradleDistribution implements GradleDistribution {
         if (isVersion("0.9-rc-1") && javaVersion == JavaVersion.VERSION_1_5) {
             return false;
         }
+        
+        if (isSameOrOlder("1.0")) {
+            return javaVersion.compareTo(JavaVersion.VERSION_1_5) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_7) <= 0;
+        }
 
         // 1.x works on Java 5 - 8
         if (isSameOrOlder("1.12")) {
@@ -92,7 +97,11 @@ public class DefaultGradleDistribution implements GradleDistribution {
             return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_8) <= 0;
         }
 
-        return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_10) <= 0;
+        if (isSameOrOlder("4.10")) {
+            return javaVersion.compareTo(JavaVersion.VERSION_1_7) >= 0 && javaVersion.compareTo(JavaVersion.VERSION_1_10) <= 0;
+        }
+
+        return javaVersion.compareTo(JavaVersion.VERSION_1_8) >= 0;
     }
 
     public boolean worksWith(OperatingSystem os) {
@@ -109,10 +118,6 @@ public class DefaultGradleDistribution implements GradleDistribution {
         return isSameOrNewer("1.0-milestone-7");
     }
 
-    public boolean isOpenApiSupported() {
-        return isSameOrNewer("0.9-rc-1") && !isSameOrNewer("2.0-rc-1");
-    }
-
     public boolean isToolingApiSupported() {
         return isSameOrNewer("1.0-milestone-3");
     }
@@ -120,22 +125,6 @@ public class DefaultGradleDistribution implements GradleDistribution {
     @Override
     public boolean isToolingApiTargetJvmSupported(JavaVersion javaVersion) {
         return worksWith(javaVersion);
-    }
-
-    public boolean isToolingApiNonAsciiOutputSupported() {
-        if (OperatingSystem.current().isWindows()) {
-            return !isVersion("1.0-milestone-7") && !isVersion("1.0-milestone-8") && !isVersion("1.0-milestone-8a");
-        }
-        return true;
-    }
-
-    public boolean isToolingApiDaemonBaseDirSupported() {
-        return isSameOrNewer("2.2-rc-1");
-    }
-
-    @Override
-    public boolean isToolingApiEventsInEmbeddedModeSupported() {
-        return isSameOrNewer("2.6-rc-1");
     }
 
     @Override
@@ -148,57 +137,21 @@ public class DefaultGradleDistribution implements GradleDistribution {
         return isSameOrNewer("2.9-rc-1");
     }
 
-    public VersionNumber getArtifactCacheLayoutVersion() {
-        if (isSameOrNewer("4.8-rc-1")) {
-            return VersionNumber.parse("2.58");
-        } else if (isSameOrNewer("4.7-rc-1")) {
-            return VersionNumber.parse("2.56");
-        } else if (isSameOrNewer("4.6-rc-1")) {
-            return VersionNumber.parse("2.53");
-        } else if (isSameOrNewer("4.5.1-rc-1")) {
-            return VersionNumber.parse("2.51");
-        } else if (isSameOrNewer("4.5-rc-1")) {
-            return VersionNumber.parse("2.48");
-        } else if (isSameOrNewer("4.4-rc-1")) {
-            return VersionNumber.parse("2.36");
-        } else if (isSameOrNewer("4.3-rc-1")) {
-            return VersionNumber.parse("2.31");
-        } else if (isSameOrNewer("4.2-rc-1")) {
-            return VersionNumber.parse("2.24");
-        } else if (isSameOrNewer("3.2-rc-1")) {
-            return VersionNumber.parse("2.23");
-        } else if (isSameOrNewer("3.1-rc-1")) {
-            return VersionNumber.parse("2.21");
-        } else if (isSameOrNewer("3.0-milestone-1")) {
-            return VersionNumber.parse("2.17");
-        } else if (isSameOrNewer("2.8-rc-1")) {
-            return VersionNumber.parse("2.16");
-        } else if (isSameOrNewer("2.4-rc-1")) {
-            return VersionNumber.parse("2.15");
-        } else if (isSameOrNewer("2.2-rc-1")) {
-            return VersionNumber.parse("2.14");
-        } else if (isSameOrNewer("2.1-rc-3")) {
-            return VersionNumber.parse("2.13");
-        } else if (isSameOrNewer("2.0-rc-1")) {
-            return VersionNumber.parse("2.12");
-        } else if (isSameOrNewer("1.12-rc-1")) {
-            return VersionNumber.parse("2.6");
-        } else if (isSameOrNewer("1.11-rc-1")) {
-            return VersionNumber.parse("2.2");
-        } else if (isSameOrNewer("1.9-rc-2")) {
-            return VersionNumber.parse("2.1");
+    public CacheVersion getArtifactCacheLayoutVersion() {
+        if (isSameOrNewer("1.9-rc-2")) {
+            return CacheLayout.META_DATA.getVersionMapping().getVersionUsedBy(this.version).get();
         } else if (isSameOrNewer("1.9-rc-1")) {
-            return VersionNumber.parse("1.31");
+            return CacheVersion.parse("1.31");
         } else if (isSameOrNewer("1.7-rc-1")) {
-            return VersionNumber.parse("0.26");
+            return CacheVersion.parse("0.26");
         } else if (isSameOrNewer("1.6-rc-1")) {
-            return VersionNumber.parse("0.24");
+            return CacheVersion.parse("0.24");
         } else if (isSameOrNewer("1.4-rc-1")) {
-            return VersionNumber.parse("0.23");
+            return CacheVersion.parse("0.23");
         } else if (isSameOrNewer("1.3")) {
-            return VersionNumber.parse("0.15");
+            return CacheVersion.parse("0.15");
         } else {
-            return VersionNumber.parse("0.1");
+            return CacheVersion.parse("0.1");
         }
     }
 
@@ -230,6 +183,64 @@ public class DefaultGradleDistribution implements GradleDistribution {
 
     public boolean isFullySupportsIvyRepository() {
         return isSameOrNewer("1.0-milestone-7");
+    }
+
+    @Override
+    public boolean isAddsTaskExecutionExceptionAroundAllTaskFailures() {
+        return isSameOrNewer("5.0");
+    }
+
+    @Override
+    public boolean isToolingApiRetainsOriginalFailureOnCancel() {
+        // Versions before 5.1 would unpack the exception and throw part of it, losing some context
+        return isSameOrNewer("5.1-rc-1");
+    }
+
+    @Override
+    public boolean isToolingApiDoesNotAddCausesOnTaskCancel() {
+        // Versions before 5.1 would sometimes add some additional 'build cancelled' exceptions
+        return isSameOrNewer("5.1-rc-1");
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnCancel() {
+        // Versions before 3.2 would throw away the cause. There was also a regression in 4.0.x
+        return isSameOrNewer("3.2") && !(isSameOrNewer("4.0") && isSameOrOlder("4.0.2"));
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnForcedCancel() {
+        // Versions before 5.1 would discard context on forced cancel
+        return isSameOrNewer("5.1-rc-1");
+    }
+
+    @Override
+    public boolean isToolingApiLogsFailureOnCancel() {
+        // Versions before 4.1 would log "CONFIGURE SUCCESSFUL" for model/action execution (but "BUILD FAILED" for task/test execution)
+        return isSameOrNewer("4.1");
+    }
+
+    @Override
+    public boolean isToolingApiHasCauseOnPhasedActionFail() {
+        return isSameOrNewer("5.1-rc-1");
+    }
+
+    @Override
+    public boolean isToolingApiMergesStderrIntoStdout() {
+        return isSameOrNewer("4.7") && isSameOrOlder("5.0");
+    }
+
+    @Override
+    public boolean isToolingApiLogsConfigureSummary() {
+        return isSameOrNewer("2.14");
+    }
+
+    @Override
+    public <T> T selectOutputWithFailureLogging(T stdout, T stderr) {
+        if (isSameOrNewer("4.0") && isSameOrOlder("4.6") || isSameOrNewer("5.1-rc-1")) {
+            return stderr;
+        }
+        return stdout;
     }
 
     protected boolean isSameOrNewer(String otherVersion) {

@@ -17,7 +17,6 @@
 package org.gradle
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.FeaturePreviewsFixture
 import org.gradle.util.Requires
 import spock.lang.Ignore
 import spock.lang.Issue
@@ -159,6 +158,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
             class MyClass {}
         """
 
+        executer.expectDeprecationWarning()
         succeeds 'compileKotlin'
 
         then:
@@ -169,6 +169,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
             class FailingClass { < }
         """
 
+        executer.expectDeprecationWarning()
         fails 'compileKotlin'
 
         then:
@@ -187,7 +188,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
 
     static String annotationProcessorDependency(File repoDir, String processorDependency) {
         """
-            sourceCompatibility = '1.6'
+            sourceCompatibility = '1.7'
 
             repositories {
                 maven {
@@ -242,14 +243,13 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
 
         private void writeBuildFile() {
             def processorBuildFile = file("$name/build.gradle")
-            FeaturePreviewsFixture.enableStablePublishing(file("$name/settings.gradle"))
             processorBuildFile << basicJavaProject()
             processorBuildFile << """
                 apply plugin: 'maven-publish'
 
                 group = '$group'
                 version = '$version'
-                sourceCompatibility = '1.6'
+                sourceCompatibility = '1.7'
 
                 dependencies {
                     compile 'org.fusesource.jansi:jansi:$JANSI_VERSION'
@@ -284,7 +284,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
                 import org.fusesource.jansi.AnsiConsole;
 
                 @SupportedAnnotationTypes({"org.gradle.Custom"})
-                @SupportedSourceVersion(SourceVersion.RELEASE_6)
+                @SupportedSourceVersion(SourceVersion.RELEASE_7)
                 public class MyProcessor extends AbstractProcessor {
                     @Override
                     public synchronized void init(ProcessingEnvironment processingEnv) {

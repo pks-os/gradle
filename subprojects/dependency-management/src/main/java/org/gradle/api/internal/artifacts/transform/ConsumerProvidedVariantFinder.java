@@ -18,6 +18,7 @@ package org.gradle.api.internal.artifacts.transform;
 
 import com.google.common.collect.Maps;
 import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.internal.artifacts.ArtifactTransformRegistration;
 import org.gradle.api.internal.artifacts.VariantTransformRegistry;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.api.internal.attributes.AttributesSchemaInternal;
@@ -62,32 +63,39 @@ public class ConsumerProvidedVariantFinder {
 
     private void findProducersFor(AttributeContainerInternal actual, AttributeContainerInternal requested, ConsumerVariantMatchResult result) {
         // Prefer direct transformation over indirect transformation
-        List<VariantTransformRegistry.Registration> candidates = new ArrayList<VariantTransformRegistry.Registration>();
-        for (VariantTransformRegistry.Registration transform : variantTransforms.getTransforms()) {
-            if (matchAttributes(transform.getTo(), requested)) {
-                if (matchAttributes(actual, transform.getFrom())) {
-                    ImmutableAttributes variantAttributes = attributesFactory.concat(actual.asImmutable(), transform.getTo().asImmutable());
-                    result.matched(variantAttributes, transform.getArtifactTransform(), 1);
+        List<ArtifactTransformRegistration> candidates = new ArrayList<ArtifactTransformRegistration>();
+        for (ArtifactTransformRegistration registration : variantTransforms.getTransforms()) {
+            if (matchAttributes(registration.getTo(), requested)) {
+                if (matchAttributes(actual, registration.getFrom())) {
+                    ImmutableAttributes variantAttributes = attributesFactory.concat(actual.asImmutable(), registration.getTo().asImmutable());
+                    if (matchAttributes(variantAttributes, requested)) {
+                        result.matched(variantAttributes, registration.getTransformationStep(), 1);
+                    }
                 }
-                candidates.add(transform);
+                candidates.add(registration);
             }
         }
         if (result.hasMatches()) {
             return;
         }
 
-        for (final VariantTransformRegistry.Registration candidate : candidates) {
+        for (ArtifactTransformRegistration candidate : candidates) {
             ConsumerVariantMatchResult inputVariants = new ConsumerVariantMatchResult();
-            collectConsumerVariants(actual, candidate.getFrom(), inputVariants);
+            AttributeContainerInternal requestedPrevious = computeRequestedAttributes(requested, candidate);
+            collectConsumerVariants(actual, requestedPrevious, inputVariants);
             if (!inputVariants.hasMatches()) {
                 continue;
             }
-            for (final ConsumerVariantMatchResult.ConsumerVariant inputVariant : inputVariants.getMatches()) {
+            for (ConsumerVariantMatchResult.ConsumerVariant inputVariant : inputVariants.getMatches()) {
                 ImmutableAttributes variantAttributes = attributesFactory.concat(inputVariant.attributes.asImmutable(), candidate.getTo().asImmutable());
-                ArtifactTransformer transformer = new ChainedTransformer(inputVariant.transformer, candidate.getArtifactTransform());
-                result.matched(variantAttributes, transformer, inputVariant.depth + 1);
+                Transformation transformation = new TransformationChain(inputVariant.transformation, candidate.getTransformationStep());
+                result.matched(variantAttributes, transformation, inputVariant.depth + 1);
             }
         }
+    }
+
+    private AttributeContainerInternal computeRequestedAttributes(AttributeContainerInternal result, ArtifactTransformRegistration transform) {
+        return attributesFactory.concat(result.asImmutable(), transform.getFrom().asImmutable()).asImmutable();
     }
 
     private AttributeSpecificCache getCache(AttributeContainer attributes) {

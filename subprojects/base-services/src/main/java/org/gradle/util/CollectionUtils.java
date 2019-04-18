@@ -19,6 +19,7 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import org.gradle.api.Action;
 import org.gradle.api.Transformer;
@@ -56,8 +57,8 @@ public abstract class CollectionUtils {
      * Returns null if the collection is empty otherwise expects a {@link #single(Iterable)} element to be found.
      */
     @Nullable
-    public static <T> T findSingle(Collection<T> source) {
-        return source.isEmpty() ? null : single(source);
+    public static <T> T findSingle(Iterable<T> source) {
+        return Iterables.isEmpty(source) ? null : single(source);
     }
 
     /**
@@ -437,7 +438,7 @@ public abstract class CollectionUtils {
      * @param <T> The element type of t1
      * @return t1
      */
-    public static <T> Collection<T> addAll(Collection<T> t1, Iterable<? extends T> t2) {
+    public static <T, C extends Collection<? super T>> C addAll(C t1, Iterable<? extends T> t2) {
         for (T t : t2) {
             t1.add(t);
         }
@@ -452,7 +453,7 @@ public abstract class CollectionUtils {
      * @param <T> The element type of t1
      * @return t1
      */
-    public static <T> Collection<T> addAll(Collection<T> t1, T... t2) {
+    public static <T, C extends Collection<? super T>> C addAll(C t1, T... t2) {
         Collections.addAll(t1, t2);
         return t1;
     }

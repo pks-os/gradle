@@ -16,43 +16,59 @@
 
 package org.gradle.api.internal.tasks.properties.annotations;
 
-import org.gradle.api.internal.changedetection.state.ClasspathSnapshotter;
-import org.gradle.api.internal.changedetection.state.FileCollectionSnapshotter;
-import org.gradle.api.internal.tasks.DeclaredTaskInputFileProperty;
-import org.gradle.api.internal.tasks.PropertySpecFactory;
-import org.gradle.api.internal.tasks.ValidationActions;
+import com.google.common.collect.ImmutableList;
+import org.gradle.api.artifacts.transform.InputArtifact;
+import org.gradle.api.artifacts.transform.InputArtifactDependencies;
 import org.gradle.api.internal.tasks.properties.BeanPropertyContext;
+import org.gradle.api.internal.tasks.properties.InputFilePropertyType;
 import org.gradle.api.internal.tasks.properties.PropertyValue;
 import org.gradle.api.internal.tasks.properties.PropertyVisitor;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.ClasspathNormalizer;
 import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Optional;
+import org.gradle.api.tasks.SkipWhenEmpty;
+import org.gradle.internal.reflect.ParameterValidationContext;
+import org.gradle.internal.reflect.PropertyMetadata;
+import org.gradle.work.Incremental;
 
 import java.lang.annotation.Annotation;
 
-public class ClasspathPropertyAnnotationHandler implements OverridingPropertyAnnotationHandler, FileSnapshottingPropertyAnnotationHandler {
+public class ClasspathPropertyAnnotationHandler implements OverridingPropertyAnnotationHandler {
     @Override
     public Class<? extends Annotation> getAnnotationType() {
         return Classpath.class;
     }
 
     @Override
-    public Class<? extends Annotation> getOverriddenAnnotationType() {
-        return InputFiles.class;
+    public boolean isPropertyRelevant() {
+        return true;
     }
 
     @Override
-    public Class<? extends FileCollectionSnapshotter> getSnapshotterImplementationType() {
-        return ClasspathSnapshotter.class;
+    public ImmutableList<Class<? extends Annotation>> getOverriddenAnnotationTypes() {
+        return ImmutableList.of(InputFiles.class, InputArtifact.class, InputArtifactDependencies.class);
     }
 
     @Override
-    public void visitPropertyValue(PropertyValue propertyValue, PropertyVisitor visitor, PropertySpecFactory specFactory, BeanPropertyContext context) {
-        DeclaredTaskInputFileProperty fileSpec = specFactory.createInputFileSpec(propertyValue, ValidationActions.NO_OP);
-        fileSpec
-            .withPropertyName(propertyValue.getPropertyName())
-            .withNormalizer(ClasspathNormalizer.class)
-            .optional(propertyValue.isOptional());
-        visitor.visitInputFileProperty(fileSpec);
+    public boolean shouldVisit(PropertyVisitor visitor) {
+        return !visitor.visitOutputFilePropertiesOnly();
+    }
+
+    @Override
+    public void visitPropertyValue(String propertyName, PropertyValue value, PropertyMetadata propertyMetadata, PropertyVisitor visitor, BeanPropertyContext context) {
+        visitor.visitInputFileProperty(
+            propertyName,
+            propertyMetadata.isAnnotationPresent(Optional.class),
+            propertyMetadata.isAnnotationPresent(SkipWhenEmpty.class),
+            propertyMetadata.isAnnotationPresent(Incremental.class),
+            ClasspathNormalizer.class,
+            value,
+            InputFilePropertyType.FILES
+        );
+    }
+
+    @Override
+    public void validatePropertyMetadata(PropertyMetadata propertyMetadata, ParameterValidationContext visitor) {
     }
 }

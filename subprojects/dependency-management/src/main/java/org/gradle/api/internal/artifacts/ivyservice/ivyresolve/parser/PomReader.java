@@ -29,6 +29,7 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.data.PomPr
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.classloader.ClassLoaderUtils;
 import org.gradle.internal.resource.local.LocallyAvailableExternalResource;
+import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -344,6 +345,20 @@ public class PomReader implements PomParent {
         return replaceProps(val);
     }
 
+    public boolean hasGradleMetadataMarker() {
+        NodeList childNodes = projectElement.getChildNodes();
+        for (int i = 0; i < childNodes.getLength(); i++) {
+            Node node = childNodes.item(i);
+            if (node instanceof Comment) {
+                String comment = node.getNodeValue();
+                if (comment.contains(MetaDataParser.GRADLE_METADATA_MARKER)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public ModuleVersionIdentifier getRelocation() {
         Element distrMgt = getFirstChildElement(projectElement, DISTRIBUTION_MGT);
         Element relocation = getFirstChildElement(distrMgt, RELOCATION);
@@ -505,7 +520,7 @@ public class PomReader implements PomParent {
         }
 
         /* (non-Javadoc)
-         * @see org.apache.ivy.plugins.parser.m2.PomDependencyMgt#getArtifaceId()
+         * @see org.apache.ivy.plugins.parser.m2.PomDependencyMgt#getArtifactId()
          */
         public String getArtifactId() {
             String val = getFirstChildText(depElement, ARTIFACT_ID);

@@ -17,7 +17,6 @@
 package org.gradle.workers;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 
 /**
  * Allows work to be submitted for asynchronous execution.  This api allows for safe, concurrent execution of work items and enables:
@@ -28,7 +27,7 @@ import org.gradle.api.Incubating;
  *     <li>Safe execution of multiple tasks in parallel</li>
  * </ul>
  *
- * Work should be submitted with a {@link Runnable} class representing the implementation of the unit of work
+ * <p>Work should be submitted with a {@link Runnable} class representing the implementation of the unit of work
  * and an action to configure the unit of work (via {@link WorkerConfiguration}).
  *
  * <pre>
@@ -41,9 +40,11 @@ import org.gradle.api.Incubating;
  *      }
  * </pre>
  *
+ * <p>
+ * An instance of the executor can be injected into a task by annotating a public constructor or property getter method with {@code javax.inject.Inject}.
+ *
  * @since 3.5
  */
-@Incubating
 public interface WorkerExecutor {
     /**
      * Submits a piece of work to be executed asynchronously.

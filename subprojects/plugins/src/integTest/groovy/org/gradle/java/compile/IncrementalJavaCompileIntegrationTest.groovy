@@ -37,7 +37,7 @@ class IncrementalJavaCompileIntegrationTest extends AbstractIntegrationSpec impl
         executedAndNotSkipped ':compileJava'
 
         when:
-        buildFile << 'sourceCompatibility = 1.6\n'
+        buildFile << 'sourceCompatibility = 1.8\n'
         succeeds ':compileJava'
 
         then:
@@ -159,31 +159,32 @@ class IncrementalJavaCompileIntegrationTest extends AbstractIntegrationSpec impl
         false | true
     }
 
-    def "recompiles inner class if they are in a separate source file"() {
+    def "removes stale class file when file moves in hierarchy"() {
         given:
-        file('src/main/java/Test.java') << 'public class Test{}'
-        file('src/main/java/Test$$InnerClass.java') << 'public class Test$$InnerClass{}'
-        buildFile << '''
-            apply plugin: 'java'
-            tasks.compileJava.options.incremental = true
-        '''.stripIndent()
+        file('src/main/java/IPerson.java') << basicInterface
+        buildFile << "apply plugin: 'java'\n"
 
         when:
-        succeeds ':compileJava'
+        succeeds 'classes'
 
         then:
         executedAndNotSkipped ':compileJava'
-        file('build/classes/java/main/Test.class').assertExists()
-        file('build/classes/java/main/Test$$InnerClass.class').assertExists()
+        file('build/classes/java/main/IPerson.class').exists()
+        !file('build/classes/java/main/some/package/IPerson.class').exists()
 
         when:
-        file('src/main/java/Test.java').text = 'public class Test{ void foo() {} }'
-        succeeds ':compileJava'
+        file('src/main/java/some/loc/IPerson.java') << """
+            package some.loc;
+        """ << basicInterface
+        assert file('src/main/java/IPerson.java').delete()
+
+        and:
+        succeeds 'assemble'
 
         then:
         executedAndNotSkipped ':compileJava'
-        file('build/classes/java/main/Test.class').assertExists()
-        file('build/classes/java/main/Test$$InnerClass.class').assertExists()
+        !file('build/classes/java/main/IPerson.class').exists()
+        file('build/classes/java/main/some/loc/IPerson.class').exists()
     }
 
     private static String getBasicInterface() {

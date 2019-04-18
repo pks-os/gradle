@@ -28,7 +28,7 @@ import org.gradle.api.publish.ivy.internal.artifact.FileBasedIvyArtifact
 import org.gradle.api.publish.ivy.internal.publication.DefaultIvyPublicationIdentity
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.util.TestUtil
+import org.gradle.util.AttributeTestUtil
 import org.junit.Rule
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -44,7 +44,7 @@ class ValidatingIvyPublisherTest extends Specification {
 
     def delegate = Mock(IvyPublisher)
     DefaultImmutableModuleIdentifierFactory moduleIdentifierFactory = new DefaultImmutableModuleIdentifierFactory()
-    IvyMutableModuleMetadataFactory metadataFactory = new IvyMutableModuleMetadataFactory(moduleIdentifierFactory, TestUtil.attributesFactory())
+    IvyMutableModuleMetadataFactory metadataFactory = new IvyMutableModuleMetadataFactory(moduleIdentifierFactory, AttributeTestUtil.attributesFactory())
 
     def publisher = new ValidatingIvyPublisher(delegate, moduleIdentifierFactory, TestFiles.fileRepository(), metadataFactory)
 
@@ -205,11 +205,12 @@ class ValidatingIvyPublisherTest extends Specification {
         "org"        | "module"     | "version-mod" | "supplied revision does not match ivy descriptor (cannot edit revision directly in the ivy descriptor file)."
     }
 
-    def "reports and fails with invalid descriptor file"() {
+    @Unroll
+    def "reports and fails with invalid descriptor file (marker = #marker)"() {
         given:
         def identity = new DefaultIvyPublicationIdentity("the-group", "the-artifact", "the-version")
-        IvyDescriptorFileGenerator ivyFileGenerator = new IvyDescriptorFileGenerator(identity)
-        final artifact = new FileBasedIvyArtifact(new File("foo.txt"), identity)
+        IvyDescriptorFileGenerator ivyFileGenerator = new IvyDescriptorFileGenerator(identity, marker, null)
+        def artifact = new FileBasedIvyArtifact(new File("foo.txt"), identity)
         artifact.setConf("unknown")
         ivyFileGenerator.addArtifact(artifact)
         def ivyFile = ivyFile(ivyFileGenerator)
@@ -224,6 +225,9 @@ class ValidatingIvyPublisherTest extends Specification {
         then:
         def e = thrown InvalidIvyPublicationException
         e.message == "Invalid publication 'pub-name': Could not parse Ivy file ${ivyFile}"
+
+        where:
+        marker << [false, true]
     }
 
     def "validates artifact attributes"() {
@@ -362,7 +366,7 @@ class ValidatingIvyPublisherTest extends Specification {
 
     class TestIvyDescriptorFileGenerator extends IvyDescriptorFileGenerator {
         TestIvyDescriptorFileGenerator(IvyPublicationIdentity projectIdentity) {
-            super(projectIdentity)
+            super(projectIdentity, false, null)
         }
 
         TestIvyDescriptorFileGenerator withBranch(String branch) {

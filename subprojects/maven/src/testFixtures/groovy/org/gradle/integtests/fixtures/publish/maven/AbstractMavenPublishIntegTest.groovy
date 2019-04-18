@@ -23,8 +23,9 @@ import org.gradle.test.fixtures.GradleMetadataAwarePublishingSpec
 import org.gradle.test.fixtures.ModuleArtifact
 import org.gradle.test.fixtures.SingleArtifactResolutionResultSpec
 import org.gradle.test.fixtures.maven.MavenFileModule
-import org.gradle.test.fixtures.maven.MavenModule
 import org.gradle.test.fixtures.maven.MavenJavaModule
+import org.gradle.test.fixtures.maven.MavenJavaPlatformModule
+import org.gradle.test.fixtures.maven.MavenModule
 
 import static org.gradle.integtests.fixtures.RepoScriptBlockUtil.mavenCentralRepositoryDefinition
 
@@ -32,11 +33,14 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
 
     def setup() {
         prepare()
-        FeaturePreviewsFixture.enableStablePublishing(settingsFile)
     }
 
     protected static MavenJavaModule javaLibrary(MavenFileModule mavenFileModule) {
         return new MavenJavaModule(mavenFileModule)
+    }
+
+    protected static MavenJavaPlatformModule javaPlatform(MavenFileModule mavenFileModule) {
+        return new MavenJavaPlatformModule(mavenFileModule)
     }
 
     void resolveArtifacts(Object dependencyNotation, @DelegatesTo(value = MavenArtifactResolutionExpectation, strategy = Closure.DELEGATE_FIRST) Closure<?> expectationSpec) {
@@ -70,7 +74,6 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
         // Replace the existing buildfile with one for resolving the published module
         settingsFile.text = "rootProject.name = 'resolve'"
         FeaturePreviewsFixture.enableGradleMetadata(settingsFile)
-        FeaturePreviewsFixture.enableImprovedPomSupport(settingsFile)
         def attributes = params.variant == null ?
             "" :
             """ 
@@ -106,8 +109,12 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
         }
 
         def externalRepo = requiresExternalDependencies?mavenCentralRepositoryDefinition():''
+        def optional = params.optionalFeatureCapabilities.collect {
+            "resolve($dependencyNotation) { capabilities { requireCapability('$it') } }"
+        }.join('\n')
+        buildFile.text = """import org.gradle.api.internal.artifacts.dsl.dependencies.PlatformSupport
 
-        buildFile.text = """
+            apply plugin: 'java-base' // to get the standard Java library derivation strategy
             configurations {
                 resolve {
                     ${attributes}
@@ -124,7 +131,13 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
             }
 
             dependencies {
+               attributesSchema { 
+                getMatchingStrategy(Category.CATEGORY_ATTRIBUTE)
+                   .disambiguationRules
+                   .add(PlatformSupport.PreferRegularPlatform)
+               }
                resolve($dependencyNotation) $extraArtifacts
+               $optional
             }
 
             task resolveArtifacts(type: Sync) {
@@ -154,6 +167,8 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
         String variant
         boolean resolveModuleMetadata = GradleMetadataResolveRunner.isExperimentalResolveBehaviorEnabled()
         boolean expectFailure
+
+        List<String> optionalFeatureCapabilities = []
     }
 
     class MavenArtifactResolutionExpectation extends ResolveParams implements ArtifactResolutionExpectationSpec<MavenModule> {
@@ -183,7 +198,8 @@ abstract class AbstractMavenPublishIntegTest extends AbstractIntegrationSpec imp
                 additionalArtifacts: additionalArtifacts?.asImmutable(),
                 variant: variant,
                 resolveModuleMetadata: withModuleMetadata,
-                expectFailure: !expectationSpec.expectSuccess
+                expectFailure: !expectationSpec.expectSuccess,
+                optionalFeatureCapabilities: optionalFeatureCapabilities,
             )
             println "Checking ${additionalArtifacts?'additional artifacts':'artifacts'} when resolving ${withModuleMetadata?'with':'without'} Gradle module metadata"
             def resolutionResult = doResolveArtifacts(params)

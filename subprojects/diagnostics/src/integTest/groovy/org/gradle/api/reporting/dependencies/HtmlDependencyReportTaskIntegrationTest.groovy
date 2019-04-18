@@ -165,7 +165,7 @@ class HtmlDependencyReportTaskIntegrationTest extends AbstractIntegrationSpec {
         json.project.configurations[0].dependencies[1].resolvable == 'FAILED'
     }
 
-    def "conflictual dependencies are marked as such"() {
+    def "conflicting dependencies are marked as such"() {
         given:
         mavenRepo.module("foo", "bar", "1.0").publish()
         mavenRepo.module("foo", "bar", "2.0").publish()
@@ -311,7 +311,7 @@ class HtmlDependencyReportTaskIntegrationTest extends AbstractIntegrationSpec {
         barInsight[0].name == 'foo:bar:2.0'
         barInsight[0].resolvable == 'RESOLVED'
         barInsight[0].hasConflict == false
-        barInsight[0].description == 'conflict resolution'
+        barInsight[0].description == null
         barInsight[0].children.size() == 0
 
         barInsight[1].name == 'foo:bar:2.0'

@@ -17,12 +17,13 @@ package org.gradle.launcher.cli;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
-import groovy.lang.GroovySystem;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.tools.ant.Main;
+import org.codehaus.groovy.util.ReleaseInfo;
 import org.gradle.api.Action;
-import org.gradle.api.internal.file.IdentityFileResolver;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.api.logging.configuration.LoggingConfiguration;
 import org.gradle.cli.CommandLineArgumentException;
 import org.gradle.cli.CommandLineConverter;
@@ -36,11 +37,10 @@ import org.gradle.initialization.LayoutCommandLineConverter;
 import org.gradle.initialization.ParallelismConfigurationCommandLineConverter;
 import org.gradle.initialization.layout.BuildLayoutFactory;
 import org.gradle.internal.Actions;
+import org.gradle.internal.IoActions;
 import org.gradle.internal.buildevents.BuildExceptionReporter;
 import org.gradle.internal.concurrent.DefaultParallelismConfiguration;
 import org.gradle.internal.jvm.Jvm;
-import org.gradle.internal.jvm.inspection.CachingJvmVersionDetector;
-import org.gradle.internal.jvm.inspection.DefaultJvmVersionDetector;
 import org.gradle.internal.logging.DefaultLoggingConfiguration;
 import org.gradle.internal.logging.LoggingCommandLineConverter;
 import org.gradle.internal.logging.LoggingManagerInternal;
@@ -53,7 +53,6 @@ import org.gradle.launcher.bootstrap.ExecutionListener;
 import org.gradle.launcher.cli.converter.LayoutToPropertiesConverter;
 import org.gradle.launcher.cli.converter.PropertiesToLogLevelConfigurationConverter;
 import org.gradle.launcher.cli.converter.PropertiesToParallelismConfigurationConverter;
-import org.gradle.process.internal.DefaultExecActionFactory;
 import org.gradle.util.GFileUtils;
 import org.gradle.util.GradleVersion;
 
@@ -77,8 +76,6 @@ public class CommandLineActionFactory {
     private static final String HELP = "h";
     private static final String VERSION = "v";
 
-    private final BuildLayoutFactory buildLayoutFactory = new BuildLayoutFactory();
-
     /**
      * <p>Converts the given command-line arguments to an {@link Action} which performs the action requested by the
      * command-line args.
@@ -92,15 +89,15 @@ public class CommandLineActionFactory {
         LoggingConfiguration loggingConfiguration = new DefaultLoggingConfiguration();
 
         return new WithLogging(loggingServices,
-            buildLayoutFactory,
             args,
             loggingConfiguration,
             new ParseAndBuildAction(loggingServices, args),
             new BuildExceptionReporter(loggingServices.get(StyledTextOutputFactory.class), loggingConfiguration, clientMetaData()));
     }
 
+    @VisibleForTesting
     protected void createActionFactories(ServiceRegistry loggingServices, Collection<CommandLineAction> actions) {
-        actions.add(new BuildActionsFactory(loggingServices, new ParametersConverter(buildLayoutFactory), new CachingJvmVersionDetector(new DefaultJvmVersionDetector(new DefaultExecActionFactory(new IdentityFileResolver())))));
+        actions.add(new BuildActionsFactory(loggingServices));
     }
 
     private static GradleLauncherMetaData clientMetaData() {
@@ -121,7 +118,8 @@ public class CommandLineActionFactory {
         out.println();
     }
 
-    static class WelcomeMessageAction implements Action<PrintStream> {
+    static class WelcomeMessageAction implements Action<Logger> {
+
         private final BuildLayoutParameters buildLayoutParameters;
         private final GradleVersion gradleVersion;
         private final Function<String, InputStream> inputStreamProvider;
@@ -144,29 +142,28 @@ public class CommandLineActionFactory {
         }
 
         @Override
-        public void execute(PrintStream out) {
+        public void execute(Logger logger) {
             if (isWelcomeMessageEnabled()) {
                 File markerFile = getMarkerFile();
 
-                if (!markerFile.exists()) {
-                    out.println();
-                    out.print("Welcome to Gradle " + gradleVersion.getVersion() + "!");
+                if (!markerFile.exists() && logger.isLifecycleEnabled()) {
+                    logger.lifecycle("");
+                    logger.lifecycle("Welcome to Gradle " + gradleVersion.getVersion() + "!");
 
                     String featureList = readReleaseFeatures();
 
                     if (StringUtils.isNotBlank(featureList)) {
-                        out.println();
-                        out.println();
-                        out.println("Here are the highlights of this release:");
-                        out.print(featureList);
+                        logger.lifecycle("");
+                        logger.lifecycle("Here are the highlights of this release:");
+                        logger.lifecycle(StringUtils.stripEnd(featureList, " \n\r"));
                     }
 
                     if (!gradleVersion.isSnapshot()) {
-                        out.println();
-                        out.println("For more details see https://docs.gradle.org/" + gradleVersion.getVersion() + "/release-notes.html");
+                        logger.lifecycle("");
+                        logger.lifecycle("For more details see https://docs.gradle.org/" + gradleVersion.getVersion() + "/release-notes.html");
                     }
 
-                    out.println();
+                    logger.lifecycle("");
 
                     writeMarkerFile(markerFile);
                 }
@@ -206,7 +203,7 @@ public class CommandLineActionFactory {
                 } catch (IOException e) {
                     // do not fail the build as feature is non-critical
                 } finally {
-                    IOUtils.closeQuietly(inputStream);
+                    IoActions.closeQuietly(inputStream);
                 }
             }
 
@@ -276,8 +273,10 @@ public class CommandLineActionFactory {
             sb.append(currentVersion.getBuildTime());
             sb.append("%nRevision:     ");
             sb.append(currentVersion.getRevision());
-            sb.append("%n%nGroovy:       ");
-            sb.append(GroovySystem.getVersion());
+            sb.append("%n%nKotlin:       ");
+            sb.append(KotlinDslVersion.current().getKotlinVersion());
+            sb.append("%nGroovy:       ");
+            sb.append(ReleaseInfo.getVersion());
             sb.append("%nAnt:          ");
             sb.append(Main.getAntVersion());
             sb.append("%nJVM:          ");
@@ -292,15 +291,13 @@ public class CommandLineActionFactory {
 
     private static class WithLogging implements Action<ExecutionListener> {
         private final ServiceRegistry loggingServices;
-        private final BuildLayoutFactory buildLayoutFactory;
         private final List<String> args;
         private final LoggingConfiguration loggingConfiguration;
         private final Action<ExecutionListener> action;
         private final Action<Throwable> reporter;
 
-        WithLogging(ServiceRegistry loggingServices, BuildLayoutFactory buildLayoutFactory, List<String> args, LoggingConfiguration loggingConfiguration, Action<ExecutionListener> action, Action<Throwable> reporter) {
+        WithLogging(ServiceRegistry loggingServices, List<String> args, LoggingConfiguration loggingConfiguration, Action<ExecutionListener> action, Action<Throwable> reporter) {
             this.loggingServices = loggingServices;
-            this.buildLayoutFactory = buildLayoutFactory;
             this.args = args;
             this.loggingConfiguration = loggingConfiguration;
             this.action = action;
@@ -312,7 +309,7 @@ public class CommandLineActionFactory {
             CommandLineConverter<BuildLayoutParameters> buildLayoutConverter = new LayoutCommandLineConverter();
             CommandLineConverter<ParallelismConfiguration> parallelConverter = new ParallelismConfigurationCommandLineConverter();
             CommandLineConverter<Map<String, String>> systemPropertiesCommandLineConverter = new SystemPropertiesCommandLineConverter();
-            LayoutToPropertiesConverter layoutToPropertiesConverter = new LayoutToPropertiesConverter(buildLayoutFactory);
+            LayoutToPropertiesConverter layoutToPropertiesConverter = new LayoutToPropertiesConverter(new BuildLayoutFactory());
 
             BuildLayoutParameters buildLayout = new BuildLayoutParameters();
             ParallelismConfiguration parallelismConfiguration = new DefaultParallelismConfiguration();
@@ -359,7 +356,7 @@ public class CommandLineActionFactory {
             try {
                 NativeServices.initialize(buildLayout.getGradleUserHomeDir());
                 loggingManager.attachProcessConsole(loggingConfiguration.getConsoleOutput());
-                new WelcomeMessageAction(buildLayout).execute(System.out);
+                new WelcomeMessageAction(buildLayout).execute(Logging.getLogger(WelcomeMessageAction.class));
                 exceptionReportingAction.execute(executionListener);
             } finally {
                 loggingManager.stop();

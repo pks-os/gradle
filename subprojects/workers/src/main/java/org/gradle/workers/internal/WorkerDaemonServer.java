@@ -16,38 +16,28 @@
 
 package org.gradle.workers.internal;
 
-import org.gradle.api.internal.AsmBackedClassGenerator;
-import org.gradle.api.internal.DefaultInstantiatorFactory;
-import org.gradle.api.internal.InstantiatorFactory;
-import org.gradle.cache.internal.CrossBuildInMemoryCacheFactory;
+import org.gradle.cache.internal.DefaultCrossBuildInMemoryCacheFactory;
 import org.gradle.internal.event.DefaultListenerManager;
-import org.gradle.internal.nativeintegration.ProcessEnvironment;
-import org.gradle.internal.nativeintegration.services.NativeServices;
-import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
+import org.gradle.internal.instantiation.DefaultInstantiatorFactory;
+import org.gradle.internal.instantiation.InjectAnnotationHandler;
+import org.gradle.internal.instantiation.InstantiatorFactory;
 
-import javax.inject.Inject;
+import java.util.Collections;
 
 public class WorkerDaemonServer extends DefaultWorkerServer {
     // Services for this process. They shouldn't be static, make them injectable instead
-    private static final ProcessEnvironment PROCESS_ENVIRONMENT = NativeServices.getInstance().get(ProcessEnvironment.class);
-    private static final InstantiatorFactory INSTANTIATOR_FACTORY = new DefaultInstantiatorFactory(new AsmBackedClassGenerator(), new CrossBuildInMemoryCacheFactory(new DefaultListenerManager()));
-    private final WorkerDirectoryProvider workerDirectoryProvider;
+    private static final InstantiatorFactory INSTANTIATOR_FACTORY = new DefaultInstantiatorFactory(new DefaultCrossBuildInMemoryCacheFactory(new DefaultListenerManager()), Collections.<InjectAnnotationHandler>emptyList());
 
-    @Inject
-    WorkerDaemonServer(WorkerDirectoryProvider workerDirectoryProvider) {
+    public WorkerDaemonServer() {
         super(INSTANTIATOR_FACTORY.inject());
-        this.workerDirectoryProvider = workerDirectoryProvider;
     }
 
     @Override
     public DefaultWorkResult execute(ActionExecutionSpec spec) {
         try {
-            PROCESS_ENVIRONMENT.maybeSetProcessDir(spec.getExecutionWorkingDir());
             return super.execute(spec);
         } catch (Throwable t) {
             return new DefaultWorkResult(true, t);
-        } finally {
-            PROCESS_ENVIRONMENT.maybeSetProcessDir(workerDirectoryProvider.getIdleWorkingDirectory());
         }
     }
 

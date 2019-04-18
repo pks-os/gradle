@@ -18,6 +18,7 @@ package org.gradle.api.internal.artifacts.repositories.resolver;
 
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.DependencyMetadata;
+import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.MutableVersionConstraint;
 import org.gradle.api.artifacts.VersionConstraint;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
@@ -28,6 +29,7 @@ import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.internal.Cast;
 import org.gradle.internal.component.external.model.DefaultModuleComponentSelector;
 import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
+import org.gradle.internal.component.model.ForcingDependencyMetadata;
 
 import java.util.List;
 
@@ -81,6 +83,11 @@ public abstract class AbstractDependencyMetadataAdapter<T extends DependencyMeta
     }
 
     @Override
+    public ModuleIdentifier getModule() {
+        return getOriginalMetadata().getSelector().getModuleIdentifier();
+    }
+
+    @Override
     public String getReason() {
         return getOriginalMetadata().getReason();
     }
@@ -100,9 +107,16 @@ public abstract class AbstractDependencyMetadataAdapter<T extends DependencyMeta
         ModuleComponentSelector selector = getOriginalMetadata().getSelector();
         AttributeContainerInternal attributes = attributesFactory.mutable((AttributeContainerInternal) selector.getAttributes());
         configureAction.execute(attributes);
-        ModuleComponentSelector target = DefaultModuleComponentSelector.newSelector(selector.getGroup(), selector.getModule(), selector.getVersionConstraint(), attributes.asImmutable());
+        ModuleComponentSelector target = DefaultModuleComponentSelector.newSelector(selector.getModuleIdentifier(), selector.getVersionConstraint(), attributes.asImmutable(), selector.getRequestedCapabilities());
         ModuleDependencyMetadata metadata = (ModuleDependencyMetadata) getOriginalMetadata().withTarget(target);
         updateMetadata(metadata);
         return Cast.uncheckedCast(this);
+    }
+
+    public void forced() {
+        ModuleDependencyMetadata originalMetadata = getOriginalMetadata();
+        if (originalMetadata instanceof ForcingDependencyMetadata) {
+            updateMetadata((ModuleDependencyMetadata) ((ForcingDependencyMetadata) originalMetadata).forced());
+        }
     }
 }

@@ -17,7 +17,6 @@ package org.gradle.groovy.compile
 
 import com.google.common.collect.Ordering
 import org.gradle.api.Action
-import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.integtests.fixtures.TestResources
@@ -29,7 +28,6 @@ import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
 import spock.lang.Ignore
-import spock.lang.IgnoreIf
 import spock.lang.Issue
 
 @TargetCoverage({GroovyCoverage.ALL})
@@ -46,6 +44,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
     def setup() {
         // necessary for picking up some of the output/errorOutput when forked executer is used
         executer.withArgument("-i")
+        executer.withRepositoryMirrors()
     }
 
     def "compileGoodCode"() {
@@ -76,7 +75,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         then:
         succeeds("compileGroovy")
         groovyClassFile('Groovy.class').exists()
-        groovyClassFile('Groovy$$Generated.java').exists()
+        groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
         groovyClassFile('Groovy$$Generated.class').exists()
     }
 
@@ -100,7 +99,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
 
         file('build/classes/stub/Groovy.java').exists()
         groovyClassFile('Groovy.class').exists()
-        groovyClassFile('Groovy$$Generated.java').exists()
+        groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
         groovyClassFile('Groovy$$Generated.class').exists()
     }
 
@@ -120,7 +119,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         // No Groovy stubs will be created if there are no java files
         // and an annotation processor is not on the classpath
         !file('build/classes/stub/Groovy.java').exists()
-        !groovyClassFile('Groovy$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
         !groovyClassFile('Groovy.class').exists()
         !groovyClassFile('Groovy$$Generated.class').exists()
     }
@@ -147,7 +146,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         // Because annotation processing is disabled
         // No Groovy stubs will be created
         !file('build/classes/stub/Groovy.java').exists()
-        !groovyClassFile('Groovy$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
         !groovyClassFile('Groovy.class').exists()
         !groovyClassFile('Groovy$$Generated.class').exists()
     }
@@ -190,8 +189,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         succeeds("compileGroovy")
         groovyClassFile('Groovy.class').exists()
         groovyClassFile('Java.class').exists()
-        groovyClassFile('Groovy$$Generated.java').exists()
-        groovyClassFile('Java$$Generated.java').exists()
+        groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
+        groovyGeneratedSourceFile('Java$$Generated.java').exists()
         groovyClassFile('Groovy$$Generated.class').exists()
         groovyClassFile('Java$$Generated.class').exists()
     }
@@ -208,8 +207,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         succeeds("compileGroovy")
         groovyClassFile('Java.class').exists()
         groovyClassFile('Groovy.class').exists()
-        !groovyClassFile('Groovy$$Generated.java').exists()
-        groovyClassFile('Java$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
+        groovyGeneratedSourceFile('Java$$Generated.java').exists()
         !groovyClassFile('Groovy$$Generated.class').exists()
         groovyClassFile('Java$$Generated.class').exists()
     }
@@ -239,8 +238,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         file('build/classes/stub/Groovy.java').exists()
         groovyClassFile('Groovy.class').exists()
         groovyClassFile('Java.class').exists()
-        groovyClassFile('Groovy$$Generated.java').exists()
-        groovyClassFile('Java$$Generated.java').exists()
+        groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
+        groovyGeneratedSourceFile('Java$$Generated.java').exists()
         groovyClassFile('Groovy$$Generated.class').exists()
         groovyClassFile('Java$$Generated.class').exists()
     }
@@ -264,8 +263,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         succeeds("compileGroovy")
         groovyClassFile('Groovy.class').exists()
         groovyClassFile('Java.class').exists()
-        !groovyClassFile('Groovy$$Generated.java').exists()
-        !groovyClassFile('Java$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Java$$Generated.java').exists()
         !groovyClassFile('Groovy$$Generated.class').exists()
         !groovyClassFile('Java$$Generated.class').exists()
     }
@@ -281,7 +280,7 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
 
         buildFile << """
             compileGroovy {
-                options.compilerArgs << '-proc:none'
+                options.annotationProcessorPath = files()
             }
         """
 
@@ -296,8 +295,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
         file('build/classes/stub/Groovy.java').exists()
         !groovyClassFile('Groovy.class').exists()
         groovyClassFile('Java.class').exists()
-        !groovyClassFile('Groovy$$Generated.java').exists()
-        !groovyClassFile('Java$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Groovy$$Generated.java').exists()
+        !groovyGeneratedSourceFile('Java$$Generated.java').exists()
         !groovyClassFile('Groovy$$Generated.class').exists()
         !groovyClassFile('Java$$Generated.class').exists()
     }
@@ -387,7 +386,8 @@ abstract class BasicGroovyCompilerIntegrationSpec extends MultiVersionIntegratio
     }
 
     // JavaFx was removed in JDK 10
-    @IgnoreIf({ JavaVersion.current() < JavaVersion.VERSION_1_8 || JavaVersion.current() > JavaVersion.VERSION_1_9 })
+    // Only oracle distribution contains JavaFx
+    @Requires([TestPrecondition.JDK8_OR_LATER, TestPrecondition.JDK9_OR_EARLIER, TestPrecondition.NOT_JDK_IBM])
     def "compileJavaFx8Code"() {
         expect:
         succeeds("compileGroovy")

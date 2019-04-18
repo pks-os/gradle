@@ -15,13 +15,17 @@
  */
 package org.gradle.api.internal.tasks.properties.annotations;
 
-import org.gradle.api.internal.tasks.DefaultTaskInputPropertySpec;
-import org.gradle.api.internal.tasks.PropertySpecFactory;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.tasks.properties.BeanPropertyContext;
 import org.gradle.api.internal.tasks.properties.PropertyValue;
 import org.gradle.api.internal.tasks.properties.PropertyVisitor;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Optional;
+import org.gradle.internal.reflect.ParameterValidationContext;
+import org.gradle.internal.reflect.PropertyMetadata;
+import org.gradle.work.Incremental;
 
+import java.io.File;
 import java.lang.annotation.Annotation;
 
 public class InputPropertyAnnotationHandler implements PropertyAnnotationHandler {
@@ -30,10 +34,31 @@ public class InputPropertyAnnotationHandler implements PropertyAnnotationHandler
     }
 
     @Override
-    @SuppressWarnings("Since15")
-    public void visitPropertyValue(PropertyValue propertyValue, PropertyVisitor visitor, PropertySpecFactory specFactory, BeanPropertyContext context) {
-        DefaultTaskInputPropertySpec declaration = specFactory.createInputPropertySpec(propertyValue.getPropertyName(), propertyValue);
-        declaration.optional(propertyValue.isOptional());
-        visitor.visitInputProperty(declaration);
+    public boolean isPropertyRelevant() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldVisit(PropertyVisitor visitor) {
+        return !visitor.visitOutputFilePropertiesOnly();
+    }
+
+    @Override
+    public void visitPropertyValue(String propertyName, PropertyValue value, PropertyMetadata propertyMetadata, PropertyVisitor visitor, BeanPropertyContext context) {
+        visitor.visitInputProperty(propertyName, value, propertyMetadata.isAnnotationPresent(Optional.class));
+    }
+
+    @Override
+    public void validatePropertyMetadata(PropertyMetadata propertyMetadata, ParameterValidationContext visitor) {
+        Class<?> valueType = propertyMetadata.getDeclaredType();
+        if (File.class.isAssignableFrom(valueType)
+            || java.nio.file.Path.class.isAssignableFrom(valueType)
+            || FileCollection.class.isAssignableFrom(valueType)) {
+            visitor.visitError(null, propertyMetadata.getPropertyName(),
+                String.format("has @Input annotation used on property of type %s", valueType.getName()));
+        }
+        if (propertyMetadata.isAnnotationPresent(Incremental.class)) {
+            visitor.visitErrorStrict(null, propertyMetadata.getPropertyName(), "has @Incremental annotation used on an @Input property");
+        }
     }
 }

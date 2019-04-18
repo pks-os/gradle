@@ -74,13 +74,13 @@ import java.util.Set;
 
 /**
  * A Gradle version of the Groovy {@link ResolveVisitor} that takes some shortcuts to make resolving faster. It tries to be as close as the original implementation, while having a significant impact
- * on performance, by taking advantage of knowlegdge of Gradle default imports, including a mapping from simple name to fully qualified class name. It also avoids unnecessary lookups of classnodes.
+ * on performance, by taking advantage of knowledge of Gradle default imports, including a mapping from simple name to fully qualified class name. It also avoids unnecessary lookups of classnodes.
  *
  * @since 2.12
  */
 public class GradleResolveVisitor extends ResolveVisitor {
     // note: BigInteger and BigDecimal are also imported by default
-    private static final String[] DEFAULT_IMPORTS = {"java.lang.", "java.io.", "java.net.", "java.util.", "groovy.lang.", "groovy.util."};
+    private static final String[] DEFAULT_IMPORTS = {"java.lang.", "java.io.", "java.net.", "java.util.", "groovy.lang.", "groovy.util.", "java.time."};
     private static final String SCRIPTS_PACKAGE = "org.gradle.groovy.scripts";
 
     private ClassNode currentClass;
@@ -99,8 +99,6 @@ public class GradleResolveVisitor extends ResolveVisitor {
     private ImportNode currImportNode;
     private MethodNode currentMethod;
     private ClassNodeResolver classNodeResolver;
-
-    private Set<String> deprecatedImports = new HashSet<String>();
 
     /**
      * A ConstructedNestedClass consists of an outer class and a name part, denoting a nested class with an unknown number of levels down. This allows resolve tests to skip this node for further inner
@@ -222,10 +220,6 @@ public class GradleResolveVisitor extends ResolveVisitor {
         visitClass(node);
     }
 
-    Set<String> getDeprecatedImports(){
-        return deprecatedImports;
-    }
-
     protected void visitConstructorOrMethod(MethodNode node, boolean isConstructor) {
         VariableScope oldScope = currentScope;
         currentScope = node.getVariableScope();
@@ -328,9 +322,9 @@ public class GradleResolveVisitor extends ResolveVisitor {
         addError("unable to resolve class " + type.getName() + " " + msg, node);
     }
 
-    private void resolveOrFail(ClassNode type, ASTNode node, boolean prefereImports) {
+    private void resolveOrFail(ClassNode type, ASTNode node, boolean preferImports) {
         resolveGenericsTypes(type.getGenericsTypes());
-        if (prefereImports && resolveAliasFromModule(type)) {
+        if (preferImports && resolveAliasFromModule(type)) {
             return;
         }
         resolveOrFail(type, node);
@@ -410,7 +404,7 @@ public class GradleResolveVisitor extends ResolveVisitor {
         // to access that class directly, so A becomes a valid
         // name in X.
         // GROOVY-4043: Do this check up the hierarchy, if needed
-        Map<String, ClassNode> hierClasses = new LinkedHashMap<String, ClassNode>();
+        Map<String, ClassNode> classHierarchy = new LinkedHashMap<String, ClassNode>();
         ClassNode val;
         for (ClassNode classToCheck = currentClass;
             /*
@@ -419,13 +413,13 @@ public class GradleResolveVisitor extends ResolveVisitor {
              */
              classToCheck != null && classToCheck != ClassHelper.OBJECT_TYPE && !SCRIPTS_PACKAGE.equals(classToCheck.getPackageName());
              classToCheck = classToCheck.getSuperClass()) {
-            if (hierClasses.containsKey(classToCheck.getName())) {
+            if (classHierarchy.containsKey(classToCheck.getName())) {
                 break;
             }
-            hierClasses.put(classToCheck.getName(), classToCheck);
+            classHierarchy.put(classToCheck.getName(), classToCheck);
         }
 
-        for (ClassNode classToCheck : hierClasses.values()) {
+        for (ClassNode classToCheck : classHierarchy.values()) {
             val = new ConstructedNestedClass(classToCheck, type.getName());
             if (resolveFromCompileUnit(val)) {
                 type.setRedirect(val);
@@ -569,10 +563,6 @@ public class GradleResolveVisitor extends ResolveVisitor {
                     type.setRedirect(tmp.redirect());
                     return true;
                 }
-            }
-            if (resolveFromResolver(type, "org.gradle.util." + name)) {
-                deprecatedImports.add(name);
-                return true;
             }
             if (name.equals("BigInteger")) {
                 type.setRedirect(ClassHelper.BigInteger_TYPE);
@@ -1485,14 +1475,14 @@ public class GradleResolveVisitor extends ResolveVisitor {
             resolveOrFail(anInterface, node, true);
         }
 
-        checkCyclicInheritence(node, node.getUnresolvedSuperClass(), node.getInterfaces());
+        checkCyclicInheritance(node, node.getUnresolvedSuperClass(), node.getInterfaces());
 
         super.visitClass(node);
 
         currentClass = oldNode;
     }
 
-    private void checkCyclicInheritence(ClassNode originalNode, ClassNode parentToCompare, ClassNode[] interfacesToCompare) {
+    private void checkCyclicInheritance(ClassNode originalNode, ClassNode parentToCompare, ClassNode[] interfacesToCompare) {
         if (!originalNode.isInterface()) {
             if (parentToCompare == null) {
                 return;
@@ -1512,7 +1502,7 @@ public class GradleResolveVisitor extends ResolveVisitor {
             if (parentToCompare == ClassHelper.OBJECT_TYPE) {
                 return;
             }
-            checkCyclicInheritence(originalNode, parentToCompare.getUnresolvedSuperClass(), null);
+            checkCyclicInheritance(originalNode, parentToCompare.getUnresolvedSuperClass(), null);
         } else {
             if (interfacesToCompare != null && interfacesToCompare.length > 0) {
                 // check interfaces at this level first
@@ -1524,7 +1514,7 @@ public class GradleResolveVisitor extends ResolveVisitor {
                 }
                 // check next level of interfaces
                 for (ClassNode intf : interfacesToCompare) {
-                    checkCyclicInheritence(originalNode, null, intf.getInterfaces());
+                    checkCyclicInheritance(originalNode, null, intf.getInterfaces());
                 }
             } else {
                 return;

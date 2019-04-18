@@ -41,6 +41,8 @@ import org.gradle.internal.component.IncompatibleConfigurationSelectionException
 import org.gradle.internal.component.external.descriptor.DefaultExclude
 import org.gradle.internal.component.local.model.LocalConfigurationMetadata
 import org.gradle.internal.component.local.model.OpaqueComponentIdentifier
+import org.gradle.util.AttributeTestUtil
+import org.gradle.util.SnapshotTestUtil
 import org.gradle.util.TestUtil
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -54,8 +56,8 @@ class LocalComponentDependencyMetadataTest extends Specification {
     ComponentIdentifier componentId = new OpaqueComponentIdentifier("foo")
 
     def setup() {
-        attributesSchema = new DefaultAttributesSchema(new ComponentAttributeMatcher(), TestUtil.instantiatorFactory(), TestUtil.valueSnapshotter())
-        factory = TestUtil.attributesFactory()
+        attributesSchema = new DefaultAttributesSchema(new ComponentAttributeMatcher(), TestUtil.instantiatorFactory(), SnapshotTestUtil.valueSnapshotter())
+        factory = AttributeTestUtil.attributesFactory()
     }
 
     private static VersionConstraint v(String version) {
@@ -82,7 +84,7 @@ class LocalComponentDependencyMetadataTest extends Specification {
         toComponent.getConfiguration("to") >> toConfig
 
         expect:
-        dep.selectConfigurations(attributes([:]), toComponent, attributesSchema) == [toConfig]
+        dep.selectConfigurations(attributes([:]), toComponent, attributesSchema, [] as Set) == [toConfig]
     }
 
     @Unroll("selects configuration '#expected' from target component (#scenario)")
@@ -112,7 +114,7 @@ class LocalComponentDependencyMetadataTest extends Specification {
         toComponent.getConfiguration("bar") >> toBarConfig
 
         expect:
-        dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema)*.name as Set == [expected] as Set
+        dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema, [] as Set)*.name as Set == [expected] as Set
 
         where:
         scenario                                         | queryAttributes                 | expected
@@ -142,12 +144,14 @@ class LocalComponentDependencyMetadataTest extends Specification {
         toComponent.getConfiguration("default") >> defaultConfig
 
         when:
-        dep.selectConfigurations(attributes(key: 'other'), toComponent, attributesSchema)*.name as Set
+        dep.selectConfigurations(attributes(key: 'other'), toComponent, attributesSchema, [] as Set)*.name as Set
 
         then:
         def e = thrown(IncompatibleConfigurationSelectionException)
         e.message == toPlatformLineSeparators("""Configuration 'default' in <target> does not match the consumer attributes
-Configuration 'default': Required key 'other' and found incompatible value 'nothing'.""")
+Configuration 'default':
+  - Incompatible attribute:
+      - Required key 'other' and found incompatible value 'nothing'.""")
     }
 
     def "revalidates explicit configuration selection if it has attributes"() {
@@ -179,12 +183,14 @@ Configuration 'default': Required key 'other' and found incompatible value 'noth
         toComponent.getConfiguration("bar") >> toBarConfig
 
         when:
-        dep.selectConfigurations(attributes(key: 'something'), toComponent, attributesSchema)*.name as Set
+        dep.selectConfigurations(attributes(key: 'something'), toComponent, attributesSchema, [] as Set)*.name as Set
 
         then:
         def e = thrown(IncompatibleConfigurationSelectionException)
         e.message == toPlatformLineSeparators("""Configuration 'bar' in <target> does not match the consumer attributes
-Configuration 'bar': Required key 'something' and found incompatible value 'something else'.""")
+Configuration 'bar':
+  - Incompatible attribute:
+      - Required key 'something' and found incompatible value 'something else'.""")
     }
 
     @Unroll("selects configuration '#expected' from target component with Java proximity matching strategy (#scenario)")
@@ -224,7 +230,7 @@ Configuration 'bar': Required key 'something' and found incompatible value 'some
 
         expect:
         try {
-            def result = dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema)*.name as Set
+            def result = dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema, [] as Set)*.name as Set
             if (expected == null && result) {
                 throw new AssertionError("Expected an ambiguous result, but got $result")
             }
@@ -294,7 +300,7 @@ Configuration 'bar': Required key 'something' and found incompatible value 'some
 
         expect:
         try {
-            def result = dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema)*.name as Set
+            def result = dep.selectConfigurations(attributes(queryAttributes), toComponent, attributesSchema, [] as Set)*.name as Set
             if (expected == null && result) {
                 throw new AssertionError("Expected an ambiguous result, but got $result")
             }
@@ -337,7 +343,7 @@ Configuration 'bar': Required key 'something' and found incompatible value 'some
         toComponent.getConfiguration("to") >> null
 
         when:
-        dep.selectConfigurations(attributes([:]), toComponent, attributesSchema)
+        dep.selectConfigurations(attributes([:]), toComponent, attributesSchema,[] as Set)
 
         then:
         def e = thrown(ConfigurationNotFoundException)
@@ -405,7 +411,7 @@ Configuration 'bar': Required key 'something' and found incompatible value 'some
             getVariantsForGraphTraversal() >> Optional.of(ImmutableList.of(toFooConfig, toBarConfig))
             getAttributesSchema() >> EmptySchema.INSTANCE
         }
-        def attributeSchemaWithCompatibility = new DefaultAttributesSchema(new ComponentAttributeMatcher(), TestUtil.instantiatorFactory(), TestUtil.valueSnapshotter())
+        def attributeSchemaWithCompatibility = new DefaultAttributesSchema(new ComponentAttributeMatcher(), TestUtil.instantiatorFactory(), SnapshotTestUtil.valueSnapshotter())
         attributeSchemaWithCompatibility.attribute(Attribute.of('key', String), {
             it.compatibilityRules.add(EqualsValuesCompatibleRule)
             it.compatibilityRules.add(ValueCompatibleRule)
@@ -418,7 +424,7 @@ Configuration 'bar': Required key 'something' and found incompatible value 'some
         toComponent.getConfiguration("bar") >> toBarConfig
 
         expect:
-        dep.selectConfigurations(attributes(queryAttributes), toComponent, attributeSchemaWithCompatibility)*.name as Set == [expected] as Set
+        dep.selectConfigurations(attributes(queryAttributes), toComponent, attributeSchemaWithCompatibility, [] as Set)*.name as Set == [expected] as Set
 
         where:
         scenario                     | queryAttributes                 | expected

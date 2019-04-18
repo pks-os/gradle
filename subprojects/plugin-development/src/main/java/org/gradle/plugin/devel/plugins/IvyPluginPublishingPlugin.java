@@ -21,8 +21,10 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.XmlProvider;
 import org.gradle.api.component.SoftwareComponent;
+import org.gradle.api.internal.FeaturePreviews;
 import org.gradle.api.publish.PublicationContainer;
 import org.gradle.api.publish.PublishingExtension;
+import org.gradle.api.publish.ivy.IvyModuleDescriptorDescription;
 import org.gradle.api.publish.ivy.IvyModuleDescriptorSpec;
 import org.gradle.api.publish.ivy.IvyPublication;
 import org.gradle.api.publish.ivy.internal.publication.IvyPublicationInternal;
@@ -33,27 +35,39 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+import javax.inject.Inject;
+
 import static org.gradle.plugin.use.resolve.internal.ArtifactRepositoriesPluginResolver.PLUGIN_MARKER_SUFFIX;
 
 class IvyPluginPublishingPlugin implements Plugin<Project> {
+    private final FeaturePreviews featurePreviews;
+
+    @Inject
+    IvyPluginPublishingPlugin(FeaturePreviews featurePreviews) {
+        this.featurePreviews = featurePreviews;
+    }
 
     @Override
     public void apply(Project project) {
         project.afterEvaluate(new Action<Project>() {
             @Override
             public void execute(final Project project) {
+                configurePublishing(project);
+            }
+        });
+    }
+
+    private void configurePublishing(final Project project) {
+        project.getExtensions().configure(PublishingExtension.class, new Action<PublishingExtension>() {
+            @Override
+            public void execute(PublishingExtension publishing) {
                 final GradlePluginDevelopmentExtension pluginDevelopment = project.getExtensions().getByType(GradlePluginDevelopmentExtension.class);
                 if (!pluginDevelopment.isAutomatedPublishing()) {
                     return;
                 }
-                project.getExtensions().configure(PublishingExtension.class, new Action<PublishingExtension>() {
-                    @Override
-                    public void execute(PublishingExtension publishing) {
-                        SoftwareComponent mainComponent = project.getComponents().getByName("java");
-                        IvyPublication mainPublication = addMainPublication(publishing, mainComponent);
-                        addMarkerPublications(mainPublication, publishing, pluginDevelopment);
-                    }
-                });
+                SoftwareComponent mainComponent = project.getComponents().getByName("java");
+                IvyPublication mainPublication = addMainPublication(publishing, mainComponent);
+                addMarkerPublications(mainPublication, publishing, pluginDevelopment);
             }
         });
     }
@@ -70,7 +84,7 @@ class IvyPluginPublishingPlugin implements Plugin<Project> {
         }
     }
 
-    private void createIvyMarkerPublication(PluginDeclaration declaration, final IvyPublication mainPublication, PublicationContainer publications) {
+    private void createIvyMarkerPublication(final PluginDeclaration declaration, final IvyPublication mainPublication, PublicationContainer publications) {
         String pluginId = declaration.getId();
         IvyPublicationInternal publication = (IvyPublicationInternal) publications.create(declaration.getName() + "PluginMarkerIvy", IvyPublication.class);
         publication.setAlias(true);
@@ -79,6 +93,12 @@ class IvyPluginPublishingPlugin implements Plugin<Project> {
         publication.descriptor(new Action<IvyModuleDescriptorSpec>() {
             @Override
             public void execute(IvyModuleDescriptorSpec descriptor) {
+                descriptor.description(new Action<IvyModuleDescriptorDescription>() {
+                    @Override
+                    public void execute(IvyModuleDescriptorDescription description) {
+                        description.getText().set(declaration.getDescription());
+                    }
+                });
                 descriptor.withXml(new Action<XmlProvider>() {
                     @Override
                     public void execute(XmlProvider xmlProvider) {

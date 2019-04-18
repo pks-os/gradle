@@ -18,6 +18,7 @@ package org.gradle.test.fixtures.maven
 
 import groovy.xml.MarkupBuilder
 import org.gradle.api.attributes.Usage
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParser
 import org.gradle.internal.hash.HashUtil
 import org.gradle.test.fixtures.AbstractModule
 import org.gradle.test.fixtures.GradleModuleMetadata
@@ -44,7 +45,8 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
     String packaging
     int publishCount = 1
     private boolean hasPom = true
-    private final List<VariantMetadataSpec> variants = [new VariantMetadataSpec("api", [(Usage.USAGE_ATTRIBUTE.name): Usage.JAVA_API]), new VariantMetadataSpec("runtime", [(Usage.USAGE_ATTRIBUTE.name): Usage.JAVA_RUNTIME])]
+    private boolean gradleMetadataRedirect = false
+    private final List<VariantMetadataSpec> variants = [new VariantMetadataSpec("api", [(Usage.USAGE_ATTRIBUTE.name): Usage.JAVA_API_JARS]), new VariantMetadataSpec("runtime", [(Usage.USAGE_ATTRIBUTE.name): Usage.JAVA_RUNTIME_JARS])]
     private final List dependencies = []
     private final List artifacts = []
     final updateFormat = new SimpleDateFormat("yyyyMMddHHmmss")
@@ -127,7 +129,7 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
         this.dependencies << [groupId: target.group, artifactId: target.module, version: target.version,
                               type: attributes.type, scope: attributes.scope, classifier: attributes.classifier,
                               optional: attributes.optional, exclusions: attributes.exclusions, rejects: attributes.rejects,
-                              reason: attributes.reason
+                              prefers: attributes.prefers, strictly: attributes.strictly, reason: attributes.reason
         ]
         return this
     }
@@ -166,6 +168,21 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
     MavenModule variant(String variant, Map<String, String> attributes) {
         createVariant(variant, attributes)
         return this
+    }
+
+    @Override
+    MavenModule variant(String variant, Map<String, String> attributes, @DelegatesTo(value= VariantMetadataSpec, strategy=Closure.DELEGATE_FIRST) Closure<?> variantConfiguration) {
+        def v = createVariant(variant, attributes)
+        variantConfiguration.delegate = v
+        variantConfiguration.resolveStrategy = Closure.DELEGATE_FIRST
+        variantConfiguration()
+        return this
+    }
+
+    @Override
+    MavenModule adhocVariants() {
+        variants.clear()
+        this
     }
 
     private VariantMetadataSpec createVariant(String variant, Map<String, String> attributes) {
@@ -433,16 +450,20 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
         }
         GradleFileModuleAdapter adapter = new GradleFileModuleAdapter(groupId, artifactId, version,
             variants.collect { v ->
+                def artifacts = v.artifacts
+                if (!artifacts && v.useDefaultArtifacts) {
+                    artifacts = defaultArtifacts
+                }
                 new VariantMetadataSpec(
                     v.name,
                     v.attributes,
                     v.dependencies + dependencies.findAll { !it.optional }.collect { d ->
-                        new DependencySpec(d.groupId, d.artifactId, d.version, d.rejects, d.exclusions, d.reason, d.attributes)
+                        new DependencySpec(d.groupId, d.artifactId, d.version, d.prefers, d.strictly, d.rejects, d.exclusions, d.reason, d.attributes)
                     },
                     v.dependencyConstraints + dependencies.findAll { it.optional }.collect { d ->
-                        new DependencyConstraintSpec(d.groupId, d.artifactId, d.version, d.rejects, d.reason, d.attributes)
+                        new DependencyConstraintSpec(d.groupId, d.artifactId, d.version, d.prefers, d.strictly, d.rejects, d.reason, d.attributes)
                     },
-                    v.artifacts?:defaultArtifacts,
+                    artifacts,
                     v.capabilities
                 )
             },
@@ -464,11 +485,14 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
                 writer << getMetaDataFileContent()
             }
         }
-
+        boolean writeRedirect = gradleMetadataRedirect
         publish(pomFileForPublish) { Writer writer ->
             def pomPackaging = packaging ?: type;
             new MarkupBuilder(writer).project {
                 mkp.comment(artifactContent)
+                if (writeRedirect) {
+                    mkp.comment(MetaDataParser.GRADLE_METADATA_MARKER)
+                }
                 modelVersion("4.0.0")
                 groupId(groupId)
                 artifactId(artifactId)
@@ -558,7 +582,7 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
                                 dependency {
                                     groupId(dep.group)
                                     artifactId(dep.module)
-                                    if (dep.prefers) { version(dep.prefers) }
+                                    if (dep.version) { version(dep.version) }
                                     scope('compile')
                                 }
                             }
@@ -568,7 +592,7 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
                                 dependency {
                                     groupId(dep.group)
                                     artifactId(dep.module)
-                                    if (dep.prefers) { version(dep.prefers) }
+                                    if (dep.version) { version(dep.version) }
                                     scope('runtime')
                                 }
                             }
@@ -655,6 +679,12 @@ abstract class AbstractMavenModule extends AbstractModule implements MavenModule
     @Override
     MavenModule withModuleMetadata() {
         super.withModuleMetadata()
+    }
+
+    @Override
+    MavenModule withGradleMetadataRedirection() {
+        gradleMetadataRedirect = true
+        return this
     }
 
     @Override

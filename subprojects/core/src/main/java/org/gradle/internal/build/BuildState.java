@@ -19,6 +19,7 @@ package org.gradle.internal.build;
 import org.gradle.api.artifacts.component.BuildIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.SettingsInternal;
+import org.gradle.initialization.IncludedBuildSpec;
 import org.gradle.initialization.NestedBuildFactory;
 import org.gradle.util.Path;
 
@@ -47,6 +48,8 @@ public interface BuildState {
      * The configured settings object for this build, if available.
      *
      * This should not be exposed directly, but should be behind some method that coordinates access from multiple threads.
+     *
+     * @throws IllegalStateException When the settings are not available for this build.
      */
     SettingsInternal getLoadedSettings() throws IllegalStateException;
 
@@ -69,4 +72,9 @@ public interface BuildState {
      * Calculates the identifier for a project in this build.
      */
     ProjectComponentIdentifier getIdentifierForProject(Path projectPath) throws IllegalStateException;
+
+    /**
+     * Asserts that the given build can be included by this build.
+     */
+    void assertCanAdd(IncludedBuildSpec includedBuildSpec);
 }

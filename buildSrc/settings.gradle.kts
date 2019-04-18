@@ -14,9 +14,18 @@
  * limitations under the License.
  */
 
-apply {
-    from("../gradle/shared-with-buildSrc/build-cache-configuration.settings.gradle.kts")
+pluginManagement {
+    repositories {
+        maven {
+            name = "kotlin-eap"
+            url = uri("https://dl.bintray.com/kotlin/kotlin-eap")
+        }
+        gradlePluginPortal()
+    }
 }
+
+apply(from = "../gradle/shared-with-buildSrc/build-cache-configuration.settings.gradle.kts")
+apply(from = "../gradle/shared-with-buildSrc/mirrors.settings.gradle.kts")
 
 val upperCaseLetters = "\\p{Upper}".toRegex()
 
@@ -41,6 +50,7 @@ include("plugins")
 include("profiling")
 include("performance")
 include("versioning")
+include("buildPlatform")
 
 fun buildFileNameFor(projectDirName: String) =
     "$projectDirName.gradle.kts"
@@ -51,5 +61,27 @@ for (project in rootProject.children) {
     project.buildFileName = buildFileNameFor(projectDirName)
     assert(project.projectDir.isDirectory)
     assert(project.buildFile.isFile)
+}
+
+fun remoteBuildCacheEnabled(settings: Settings) = settings.buildCache.remote?.isEnabled == true
+
+fun isOpenJDK() = true == System.getProperty("java.vm.name")?.contains("OpenJDK")
+
+fun isOpenJDK11() = isOpenJDK() && JavaVersion.current().isJava11
+
+fun getBuildJavaHome() = System.getProperty("java.home")
+
+gradle.settingsEvaluated {
+    if ("true" == System.getProperty("org.gradle.ignoreBuildJavaVersionCheck")) {
+        return@settingsEvaluated
+    }
+
+    if (remoteBuildCacheEnabled(this) && !isOpenJDK11()) {
+        throw GradleException("Remote cache is enabled, which requires OpenJDK 11 to perform this build. It's currently ${getBuildJavaHome()}.")
+    }
+
+    if (!JavaVersion.current().isJava9Compatible) {
+        throw GradleException("JDK 9+ is required to perform this build. It's currently ${getBuildJavaHome()}.")
+    }
 }
 

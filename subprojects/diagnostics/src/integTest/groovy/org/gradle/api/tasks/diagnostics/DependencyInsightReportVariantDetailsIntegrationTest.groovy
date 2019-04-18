@@ -16,8 +16,10 @@
 
 package org.gradle.api.tasks.diagnostics
 
+import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.FeaturePreviewsFixture
+import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Unroll
 
 class DependencyInsightReportVariantDetailsIntegrationTest extends AbstractIntegrationSpec {
@@ -26,6 +28,7 @@ class DependencyInsightReportVariantDetailsIntegrationTest extends AbstractInteg
 
         // detector confuses attributes with stack traces
         executer.withStackTraceChecksDisabled()
+        new ResolveTestFixture(buildFile).addDefaultVariantDerivationStrategy()
     }
 
     @Unroll
@@ -53,6 +56,9 @@ class DependencyInsightReportVariantDetailsIntegrationTest extends AbstractInteg
         outputContains """project :$expectedProject
    variant "$expectedVariant" [
       $expectedAttributes
+      org.gradle.dependency.bundling = external
+      org.gradle.category            = library (not requested)
+      org.gradle.jvm.version         = ${JavaVersion.current().majorVersion}
    ]
 
 project :$expectedProject
@@ -60,8 +66,8 @@ project :$expectedProject
 
         where:
         configuration      | expectedProject | expectedVariant   | expectedAttributes
-        'compileClasspath' | 'b'             | 'apiElements'     | 'org.gradle.usage = java-api'
-        'runtimeClasspath' | 'c'             | 'runtimeElements' | 'org.gradle.usage = java-runtime-jars (compatible with: java-runtime)'
+        'compileClasspath' | 'b'             | 'apiElements'     | 'org.gradle.usage               = java-api-jars (compatible with: java-api)'
+        'runtimeClasspath' | 'c'             | 'runtimeElements' | 'org.gradle.usage               = java-runtime-jars (compatible with: java-runtime)'
     }
 
     def "shows published variant details"() {
@@ -96,14 +102,16 @@ project :$expectedProject
         run "dependencyInsight", "--dependency", "leaf"
 
         then:
-        output.contains """org.test:leaf:1.0
+        outputContains """org.test:leaf:1.0
    variant "api" [
-      org.gradle.usage  = java-api
-      org.gradle.test   = published attribute (not requested)
-      org.gradle.status = release (not requested)
+      org.gradle.usage               = java-api
+      org.gradle.test                = published attribute (not requested)
+      org.gradle.status              = release (not requested)
 
       Requested attributes not found in the selected variant:
-         org.gradle.blah   = something
+         org.gradle.dependency.bundling = external
+         org.gradle.blah                = something
+         org.gradle.jvm.version         = ${JavaVersion.current().majorVersion}
    ]
 
 org.test:leaf:1.0
@@ -171,7 +179,9 @@ org:middle:1.0 FAILED
         output.contains """
 org:leaf:1.0
    variant "runtime" [
-      org.gradle.status = release (not requested)
+      org.gradle.status   = release (not requested)
+      org.gradle.usage    = java-runtime (not requested)
+      org.gradle.category = library (not requested)
    ]
 
 org:leaf:1.0
@@ -209,9 +219,11 @@ org:leaf:1.0
         then:
         output.contains """org:leaf:1.0
    variant "runtime" [
-      org.gradle.status = release (not requested)
+      org.gradle.status   = release (not requested)
+      org.gradle.usage    = java-runtime (not requested)
+      org.gradle.category = library (not requested)
       Requested attributes not found in the selected variant:
-         usage             = dummy
+         usage               = dummy
    ]
 
 org:leaf:1.0
@@ -268,18 +280,22 @@ org:leaf:1.0
         then:
         outputContains """
 org:testA:1.0
-   variant "default" [
-      custom            = dep_value
-      org.gradle.status = release (not requested)
+   variant "runtime" [
+      custom              = dep_value
+      org.gradle.status   = release (not requested)
+      org.gradle.usage    = java-runtime (not requested)
+      org.gradle.category = library (not requested)
    ]
 
 org:testA:1.0
 \\--- conf
 
 org:testB:1.0
-   variant "default" [
-      custom            = dep_value
-      org.gradle.status = release (not requested)
+   variant "runtime" [
+      custom              = dep_value
+      org.gradle.status   = release (not requested)
+      org.gradle.usage    = java-runtime (not requested)
+      org.gradle.category = library (not requested)
    ]
 
 org:testB:+ -> 1.0

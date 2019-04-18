@@ -18,10 +18,10 @@ package org.gradle.workers.internal
 
 import org.gradle.api.Project
 import org.gradle.api.internal.file.FileResolver
-import spock.lang.Timeout
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import spock.lang.Unroll
 
-@Timeout(120)
+@IntegrationTestTimeout(120)
 class WorkerExecutorInjectionIntegrationTest extends AbstractWorkerExecutorIntegrationTest {
 
     @Unroll
@@ -35,7 +35,8 @@ class WorkerExecutorInjectionIntegrationTest extends AbstractWorkerExecutorInteg
         fails("runInWorker")
 
         and:
-        failure.assertHasCause("Unable to determine InjectingRunnable argument #1: missing parameter value of type $forbiddenType, or no service of type $forbiddenType")
+        failure.assertHasCause("Could not create an instance of type InjectingRunnable.")
+        failure.assertHasCause("Unable to determine constructor argument #1: missing parameter of $forbiddenType, or no service of type $forbiddenType")
 
         where:
         forbiddenType << [Project, FileResolver]

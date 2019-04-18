@@ -9,6 +9,7 @@ if (buildTypes.promotionBuild.active) {
 ext.milestoneNumber = project.hasProperty("milestoneNumber") ? project.milestoneNumber.toInteger() : null
 ext.rcNumber = project.hasProperty("rcNumber") ? project.rcNumber.toInteger() : null
 ext.finalRelease = project.hasProperty("finalRelease")
+ext.versionQualifier = project.hasProperty("versionQualifier") ? project.versionQualifier: null
 if ((milestoneNumber != null && rcNumber != null) ||
     (rcNumber != null && finalRelease) ||
     (milestoneNumber != null && finalRelease)) {
@@ -40,7 +41,7 @@ if (!project.hasProperty("ignoreIncomingBuildReceipt") && new File(incomingBuild
     ext.buildTimestamp = timestampFormat.format(buildTime)
 }
 
-task determineCommitId {
+def determineCommitId = tasks.register("determineCommitId") {
     ext.commitId = null
 
     doLast {
@@ -110,18 +111,18 @@ task determineCommitId {
     }
 }
 
-task configureBuildReceipt {
+def configureBuildReceipt = tasks.register("configureBuildReceipt") {
     dependsOn determineCommitId
     doLast {
         createBuildReceipt.versionNumber = rootProject.version
         createBuildReceipt.baseVersion = rootProject.baseVersion
         createBuildReceipt.snapshot = rootProject.isSnapshot
         createBuildReceipt.buildTimestamp = rootProject.buildTimestamp
-        createBuildReceipt.commitId = determineCommitId.commitId
+        createBuildReceipt.commitId = determineCommitId.get().commitId
     }
 }
 
-task createBuildReceipt(type: org.gradle.build.BuildReceipt) {
+tasks.register("createBuildReceipt", org.gradle.build.BuildReceipt) {
     dependsOn configureBuildReceipt
     destinationDir = file("${rootProject.buildDir}")
 }
@@ -137,6 +138,9 @@ if (finalRelease) {
     version += "-rc-$rcNumber"
 } else if (milestoneNumber != null) {
     version += "-milestone-$milestoneNumber"
+} else if (versionQualifier != null ) {
+    isSnapshot = true
+    version += "-$versionQualifier-$buildTimestamp"
 } else {
     isSnapshot = true
     version += "-$buildTimestamp"

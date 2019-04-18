@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
+import org.gradle.api.Project;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
@@ -62,7 +63,7 @@ public class EclipseDependenciesCreator {
     }
 
     public List<AbstractClasspathEntry> createDependencyEntries() {
-        EclipseDependenciesVisitor visitor = new EclipseDependenciesVisitor();
+        EclipseDependenciesVisitor visitor = new EclipseDependenciesVisitor(classpath.getProject());
         new IdeDependencySet(classpath.getProject().getDependencies(), classpath.getPlusConfigurations(), classpath.getMinusConfigurations()).visit(visitor);
         return visitor.getDependencies();
     }
@@ -74,6 +75,11 @@ public class EclipseDependenciesCreator {
         private final List<AbstractClasspathEntry> files = Lists.newArrayList();
         private final Multimap<String, String> pathToSourceSets = collectLibraryToSourceSetMapping();
         private final UnresolvedIdeDependencyHandler unresolvedIdeDependencyHandler = new UnresolvedIdeDependencyHandler();
+        private final Project project;
+
+        public EclipseDependenciesVisitor(Project project) {
+            this.project = project;
+        }
 
         @Override
         public boolean isOffline() {
@@ -103,7 +109,7 @@ public class EclipseDependenciesCreator {
             File sourceFile = sources.isEmpty() ? null : sources.iterator().next().getFile();
             File javaDocFile = javaDoc.isEmpty() ? null : javaDoc.iterator().next().getFile();
             ModuleComponentIdentifier componentIdentifier = (ModuleComponentIdentifier) artifact.getId().getComponentIdentifier();
-            DefaultModuleVersionIdentifier moduleVersionIdentifier = new DefaultModuleVersionIdentifier(componentIdentifier.getGroup(), componentIdentifier.getModule(), componentIdentifier.getVersion());
+            ModuleVersionIdentifier moduleVersionIdentifier = DefaultModuleVersionIdentifier.newId(componentIdentifier.getModuleIdentifier(), componentIdentifier.getVersion());
             modules.add(createLibraryEntry(artifact.getFile(), sourceFile, javaDocFile, classpath, moduleVersionIdentifier, pathToSourceSets));
         }
 
@@ -114,7 +120,7 @@ public class EclipseDependenciesCreator {
 
         @Override
         public void visitUnresolvedDependency(UnresolvedDependencyResult unresolvedDependency) {
-            File unresolvedFile = unresolvedIdeDependencyHandler.asFile(unresolvedDependency);
+            File unresolvedFile = unresolvedIdeDependencyHandler.asFile(unresolvedDependency, project.getProjectDir());
             files.add(createLibraryEntry(unresolvedFile, null, null, classpath, null, pathToSourceSets));
             unresolvedIdeDependencyHandler.log(unresolvedDependency);
         }

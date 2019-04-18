@@ -17,6 +17,12 @@
 package org.gradle.internal.service.scopes;
 
 import org.gradle.StartParameter;
+import org.gradle.api.internal.CollectionCallbackActionDecorator;
+import org.gradle.api.internal.DefaultCollectionCallbackActionDecorator;
+import org.gradle.configuration.internal.DefaultListenerBuildOperationDecorator;
+import org.gradle.configuration.internal.DefaultUserCodeApplicationContext;
+import org.gradle.configuration.internal.ListenerBuildOperationDecorator;
+import org.gradle.configuration.internal.UserCodeApplicationContext;
 import org.gradle.initialization.DefaultGradleLauncherFactory;
 import org.gradle.initialization.GradleLauncherFactory;
 import org.gradle.internal.concurrent.CompositeStoppable;
@@ -36,7 +42,6 @@ import org.gradle.internal.operations.notify.BuildOperationNotificationBridge;
 import org.gradle.internal.operations.notify.BuildOperationNotificationListenerRegistrar;
 import org.gradle.internal.operations.notify.BuildOperationNotificationValve;
 import org.gradle.internal.operations.trace.BuildOperationTrace;
-import org.gradle.internal.progress.BuildProgressLogger;
 import org.gradle.internal.resources.ResourceLockCoordinationService;
 import org.gradle.internal.service.DefaultServiceRegistry;
 import org.gradle.internal.service.ServiceRegistry;
@@ -60,7 +65,6 @@ import java.io.IOException;
  * It, importantly, is not the parent of build session scope services.
  */
 public class CrossBuildSessionScopeServices implements Closeable {
-
     private final BuildOperationTrace buildOperationTrace;
     private final BuildOperationNotificationBridge buildOperationNotificationBridge;
     private final LoggingBuildOperationProgressBroadcaster loggingBuildOperationProgressBroadcaster;
@@ -91,9 +95,21 @@ public class CrossBuildSessionScopeServices implements Closeable {
         return buildOperationListenerManager;
     }
 
+    LoggingBuildOperationProgressBroadcaster createLoggingBuildOperationProgressBroadcaster() {
+        return loggingBuildOperationProgressBroadcaster;
+    }
+
     BuildOperationExecutor createBuildOperationExecutor() {
         // Wrap to prevent exposing Stoppable, as we don't want to stop at this scope
         return new DelegatingBuildOperationExecutor(services.get(BuildOperationExecutor.class));
+    }
+
+    ListenerBuildOperationDecorator createListenerBuildOperationDecorator() {
+        return services.get(ListenerBuildOperationDecorator.class);
+    }
+
+    UserCodeApplicationContext createUserCodeApplicationContext() {
+        return services.get(UserCodeApplicationContext.class);
     }
 
     BuildOperationNotificationListenerRegistrar createBuildOperationNotificationListenerRegistrar() {
@@ -102,6 +118,10 @@ public class CrossBuildSessionScopeServices implements Closeable {
 
     BuildOperationNotificationValve createBuildOperationNotificationValve() {
         return buildOperationNotificationBridge.getValve();
+    }
+
+    CollectionCallbackActionDecorator createDomainObjectCollectioncallbackActionDecorator(BuildOperationExecutor buildOperationExecutor, UserCodeApplicationContext userCodeApplicationContext) {
+        return services.get(CollectionCallbackActionDecorator.class);
     }
 
     @Override
@@ -120,10 +140,9 @@ public class CrossBuildSessionScopeServices implements Closeable {
             super(parent);
         }
 
-        GradleLauncherFactory createGradleLauncherFactory(GradleUserHomeScopeServiceRegistry userHomeDirServiceRegistry, BuildProgressLogger buildProgressLogger) {
+        GradleLauncherFactory createGradleLauncherFactory(GradleUserHomeScopeServiceRegistry userHomeDirServiceRegistry) {
             return new DefaultGradleLauncherFactory(
                 userHomeDirServiceRegistry,
-                buildProgressLogger,
                 CrossBuildSessionScopeServices.this
             );
         }
@@ -137,7 +156,6 @@ public class CrossBuildSessionScopeServices implements Closeable {
             ProgressLoggerFactory progressLoggerFactory,
             WorkerLeaseService workerLeaseService,
             ExecutorFactory executorFactory,
-            ResourceLockCoordinationService resourceLockCoordinationService,
             ParallelismConfigurationManager parallelismConfigurationManager,
             BuildOperationIdFactory buildOperationIdFactory
         ) {
@@ -147,10 +165,21 @@ public class CrossBuildSessionScopeServices implements Closeable {
                 progressLoggerFactory,
                 new DefaultBuildOperationQueueFactory(workerLeaseService),
                 executorFactory,
-                resourceLockCoordinationService,
                 parallelismConfigurationManager,
                 buildOperationIdFactory
             );
+        }
+
+        UserCodeApplicationContext createUserCodeApplicationContext() {
+            return new DefaultUserCodeApplicationContext();
+        }
+
+        ListenerBuildOperationDecorator createListenerBuildOperationDecorator(BuildOperationExecutor buildOperationExecutor, UserCodeApplicationContext userCodeApplicationContext) {
+            return new DefaultListenerBuildOperationDecorator(buildOperationExecutor, userCodeApplicationContext);
+        }
+
+        CollectionCallbackActionDecorator createDomainObjectCollectioncallbackActionDecorator(BuildOperationExecutor buildOperationExecutor, UserCodeApplicationContext userCodeApplicationContext) {
+            return new DefaultCollectionCallbackActionDecorator(buildOperationExecutor, userCodeApplicationContext);
         }
     }
 }

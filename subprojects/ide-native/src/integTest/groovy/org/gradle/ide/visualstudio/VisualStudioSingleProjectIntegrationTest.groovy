@@ -60,7 +60,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
             apply plugin: 'cpp-application'
             
             application {
-                operatingSystems = [objects.named(OperatingSystemFamily, 'foo')]
+                targetMachines = [machines.os('os-family')]
             }
         """
 
@@ -68,12 +68,11 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         run "visualStudio"
 
         then:
-        result.assertTasksExecuted(":visualStudio", ":appVisualStudioSolution")
-        notExecuted getProjectTasks("app")
+        executedAndNotSkipped(":visualStudio", ":appVisualStudioSolution", *getProjectTasks("app"))
 
         and:
         final mainSolution = solutionFile("app.sln")
-        mainSolution.assertHasProjects()
+        mainSolution.assertHasProjects("app")
     }
 
     def "create visual studio solution for single executable"() {
@@ -380,7 +379,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         if (toolChain.visualCpp) {
             return ""
         } else {
-            return configurationName == "release" ? "stripped/" : ""
+            return configurationName.startsWith("release") ? "stripped/" : ""
         }
     }
 }

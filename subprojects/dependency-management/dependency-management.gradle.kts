@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import org.gradle.build.ClasspathManifest
 import org.gradle.gradlebuild.testing.integrationtests.cleanup.WhenNotEmpty
 import org.gradle.gradlebuild.unittestandcompile.ModuleType
 
@@ -24,10 +23,11 @@ plugins {
 
 dependencies {
     api(project(":core"))
-    api(project(":versionControl"))
 
     implementation(project(":resources"))
     implementation(project(":resourcesHttp"))
+    implementation(project(":snapshots"))
+    implementation(project(":execution"))
 
     implementation(library("asm"))
     implementation(library("asm_commons"))
@@ -37,12 +37,12 @@ dependencies {
     implementation(library("ivy"))
     implementation(library("slf4j_api"))
     implementation(library("gson"))
-    implementation(library("jcip"))
     implementation(library("maven3"))
 
     runtimeOnly(library("bouncycastle_provider"))
     runtimeOnly(project(":installationBeacon"))
     runtimeOnly(project(":compositeBuilds"))
+    runtimeOnly(project(":versionControl"))
 
     testImplementation(library("nekohtml"))
 
@@ -52,8 +52,10 @@ dependencies {
     integTestRuntimeOnly(project(":resourcesSftp"))
     integTestRuntimeOnly(project(":testKit"))
 
-    testFixturesCompile(project(":resourcesHttp", "testFixturesUsageCompile"))
+    testFixturesApi(project(":resourcesHttp", "testFixturesApiElements"))
     testFixturesImplementation(project(":internalIntegTesting"))
+
+    crossVersionTestRuntimeOnly(project(":maven"))
 }
 
 gradlebuildJava {
@@ -63,15 +65,18 @@ gradlebuildJava {
 testFixtures {
     from(":core")
     from(":messaging")
-    from(":modelCore")
+    from(":coreApi")
     from(":versionControl")
     from(":resourcesHttp")
+    from(":baseServices")
+    from(":snapshots")
+    from(":execution")
 }
 
 testFilesCleanup {
     policy.set(WhenNotEmpty.REPORT)
 }
 
-val classpathManifest by tasks.getting(ClasspathManifest::class) {
+tasks.classpathManifest {
     additionalProjects = listOf(project(":runtimeApiInfo"))
 }

@@ -17,8 +17,10 @@
 package org.gradle.api.plugins.quality.internal;
 
 import org.gradle.api.Task;
+import org.gradle.api.internal.CollectionCallbackActionDecorator;
 import org.gradle.api.plugins.quality.FindBugsXmlReport;
 import org.gradle.api.plugins.quality.internal.findbugs.FindBugsXmlReportImpl;
+import org.gradle.api.reporting.CustomizableHtmlReport;
 import org.gradle.api.reporting.SingleFileReport;
 import org.gradle.api.reporting.internal.CustomizableHtmlReportImpl;
 import org.gradle.api.reporting.internal.TaskGeneratedSingleFileReport;
@@ -26,10 +28,11 @@ import org.gradle.api.reporting.internal.TaskReportContainer;
 
 import javax.inject.Inject;
 
+@SuppressWarnings("deprecation")
 public class FindBugsReportsImpl extends TaskReportContainer<SingleFileReport> implements FindBugsReportsInternal {
     @Inject
-    public FindBugsReportsImpl(Task task) {
-        super(SingleFileReport.class, task);
+    public FindBugsReportsImpl(Task task, CollectionCallbackActionDecorator callbackActionDecorator) {
+        super(SingleFileReport.class, task, callbackActionDecorator);
 
         add(FindBugsXmlReportImpl.class, "xml", task);
         add(CustomizableHtmlReportImpl.class, "html", task);
@@ -41,8 +44,8 @@ public class FindBugsReportsImpl extends TaskReportContainer<SingleFileReport> i
         return (FindBugsXmlReport) getByName("xml");
     }
 
-    public SingleFileReport getHtml() {
-        return getByName("html");
+    public CustomizableHtmlReport getHtml() {
+        return withType(CustomizableHtmlReport.class).getByName("html");
     }
 
     public SingleFileReport getText() {

@@ -15,12 +15,12 @@
  */
 package org.gradle.api.internal.tasks.compile;
 
-import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDetector;
 import org.gradle.internal.Factory;
 import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.internal.ExecHandleFactory;
+import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
 import org.gradle.workers.internal.WorkerDaemonFactory;
 
@@ -30,15 +30,15 @@ public class DefaultJavaCompilerFactory implements JavaCompilerFactory {
     private final WorkerDirectoryProvider workingDirProvider;
     private final WorkerDaemonFactory workerDaemonFactory;
     private final Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory;
-    private final FileResolver fileResolver;
+    private final JavaForkOptionsFactory forkOptionsFactory;
     private final ExecHandleFactory execHandleFactory;
-    private AnnotationProcessorDetector processorDetector;
+    private final AnnotationProcessorDetector processorDetector;
 
-    public DefaultJavaCompilerFactory(WorkerDirectoryProvider workingDirProvider, WorkerDaemonFactory workerDaemonFactory, Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory, FileResolver fileResolver, ExecHandleFactory execHandleFactory, AnnotationProcessorDetector processorDetector) {
+    public DefaultJavaCompilerFactory(WorkerDirectoryProvider workingDirProvider, WorkerDaemonFactory workerDaemonFactory, Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory, JavaForkOptionsFactory forkOptionsFactory, ExecHandleFactory execHandleFactory, AnnotationProcessorDetector processorDetector) {
         this.workingDirProvider = workingDirProvider;
         this.workerDaemonFactory = workerDaemonFactory;
         this.javaHomeBasedJavaCompilerFactory = javaHomeBasedJavaCompilerFactory;
-        this.fileResolver = fileResolver;
+        this.forkOptionsFactory = forkOptionsFactory;
         this.execHandleFactory = execHandleFactory;
         this.processorDetector = processorDetector;
     }
@@ -65,7 +65,7 @@ public class DefaultJavaCompilerFactory implements JavaCompilerFactory {
 
         Compiler<JavaCompileSpec> compiler = new JdkJavaCompiler(javaHomeBasedJavaCompilerFactory);
         if (ForkingJavaCompileSpec.class.isAssignableFrom(type) && !jointCompilation) {
-            return new DaemonJavaCompiler(workingDirProvider.getIdleWorkingDirectory(), compiler, workerDaemonFactory, fileResolver);
+            return new DaemonJavaCompiler(workingDirProvider.getWorkingDirectory(), compiler, workerDaemonFactory, forkOptionsFactory);
         }
 
         return compiler;

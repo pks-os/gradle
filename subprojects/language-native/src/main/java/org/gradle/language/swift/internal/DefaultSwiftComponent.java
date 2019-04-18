@@ -17,11 +17,9 @@
 package org.gradle.language.swift.internal;
 
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.file.FileOperations;
-import org.gradle.api.internal.provider.LockableProperty;
-import org.gradle.api.internal.provider.LockableSetProperty;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.SetProperty;
 import org.gradle.internal.Cast;
 import org.gradle.language.internal.DefaultBinaryCollection;
 import org.gradle.language.nativeplatform.internal.ComponentWithNames;
@@ -30,8 +28,7 @@ import org.gradle.language.nativeplatform.internal.Names;
 import org.gradle.language.swift.SwiftBinary;
 import org.gradle.language.swift.SwiftComponent;
 import org.gradle.language.swift.SwiftVersion;
-import org.gradle.nativeplatform.OperatingSystemFamily;
-import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform;
+import org.gradle.nativeplatform.TargetMachine;
 
 import java.util.Collections;
 
@@ -41,20 +38,19 @@ public abstract class DefaultSwiftComponent extends DefaultNativeComponent imple
     private final Property<String> module;
     private final String name;
     private final Names names;
-    private final LockableProperty<SwiftVersion> sourceCompatibility;
-    private final LockableSetProperty<OperatingSystemFamily> operatingSystems;
+    private final Property<SwiftVersion> sourceCompatibility;
+    private final SetProperty<TargetMachine> targetMachines;
 
-    public DefaultSwiftComponent(String name, FileOperations fileOperations, ObjectFactory objectFactory) {
-        super(fileOperations);
+    public DefaultSwiftComponent(String name, ObjectFactory objectFactory) {
+        super(objectFactory);
         this.name = name;
         swiftSource = createSourceView("src/"+ name + "/swift", Collections.singletonList("swift"));
         module = objectFactory.property(String.class);
-        sourceCompatibility = new LockableProperty<SwiftVersion>(objectFactory.property(SwiftVersion.class));
+        sourceCompatibility = objectFactory.property(SwiftVersion.class);
 
         names = Names.of(name);
         binaries = Cast.uncheckedCast(objectFactory.newInstance(DefaultBinaryCollection.class, SwiftBinary.class));
-        operatingSystems = new LockableSetProperty<OperatingSystemFamily>(objectFactory.setProperty(OperatingSystemFamily.class));
-        operatingSystems.set(Collections.singleton(objectFactory.named(OperatingSystemFamily.class, DefaultNativePlatform.getCurrentOperatingSystem().toFamilyName())));
+        targetMachines = objectFactory.setProperty(TargetMachine.class);
     }
 
     @Override
@@ -83,12 +79,12 @@ public abstract class DefaultSwiftComponent extends DefaultNativeComponent imple
     }
 
     @Override
-    public LockableProperty<SwiftVersion> getSourceCompatibility() {
+    public Property<SwiftVersion> getSourceCompatibility() {
         return sourceCompatibility;
     }
 
     @Override
-    public LockableSetProperty<OperatingSystemFamily> getOperatingSystems() {
-        return operatingSystems;
+    public SetProperty<TargetMachine> getTargetMachines() {
+        return targetMachines;
     }
 }

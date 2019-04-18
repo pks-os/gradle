@@ -16,6 +16,7 @@
 
 package org.gradle.api.internal.artifacts.transform;
 
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactSet;
 import org.gradle.internal.operations.BuildOperationQueue;
@@ -23,30 +24,57 @@ import org.gradle.internal.operations.RunnableBuildOperation;
 
 import java.io.File;
 import java.util.Map;
+import java.util.Optional;
 
 class TransformingAsyncArtifactListener implements ResolvedArtifactSet.AsyncArtifactListener {
-    private final Map<ResolvableArtifact, TransformArtifactOperation> artifactResults;
-    private final Map<File, TransformFileOperation> fileResults;
+    private final Map<ComponentArtifactIdentifier, TransformationResult> artifactResults;
+    private final Map<File, TransformationResult> fileResults;
+    private final ExecutionGraphDependenciesResolver dependenciesResolver;
+    private final TransformationNodeRegistry transformationNodeRegistry;
     private final BuildOperationQueue<RunnableBuildOperation> actions;
     private final ResolvedArtifactSet.AsyncArtifactListener delegate;
-    private final ArtifactTransformer transform;
+    private final Transformation transformation;
 
-    TransformingAsyncArtifactListener(ArtifactTransformer transform, ResolvedArtifactSet.AsyncArtifactListener delegate, BuildOperationQueue<RunnableBuildOperation> actions, Map<ResolvableArtifact, TransformArtifactOperation> artifactResults, Map<File, TransformFileOperation> fileResults) {
+    TransformingAsyncArtifactListener(
+        Transformation transformation,
+        ResolvedArtifactSet.AsyncArtifactListener delegate,
+        BuildOperationQueue<RunnableBuildOperation> actions,
+        Map<ComponentArtifactIdentifier, TransformationResult> artifactResults,
+        Map<File, TransformationResult> fileResults,
+        ExecutionGraphDependenciesResolver dependenciesResolver,
+        TransformationNodeRegistry transformationNodeRegistry
+    ) {
         this.artifactResults = artifactResults;
         this.actions = actions;
-        this.transform = transform;
+        this.transformation = transformation;
         this.delegate = delegate;
         this.fileResults = fileResults;
+        this.dependenciesResolver = dependenciesResolver;
+        this.transformationNodeRegistry = transformationNodeRegistry;
     }
 
     @Override
     public void artifactAvailable(ResolvableArtifact artifact) {
-        TransformArtifactOperation operation = new TransformArtifactOperation(artifact, transform);
-        artifactResults.put(artifact, operation);
-        if (transform.hasCachedResult(artifact.getFile())) {
-            operation.run(null);
+        ComponentArtifactIdentifier artifactId = artifact.getId();
+        Optional<TransformationNode> node = transformationNodeRegistry.getIfExecuted(artifactId, transformation);
+        if (node.isPresent()) {
+            artifactResults.put(artifactId, new PrecomputedTransformationResult(node.get().getTransformedSubject()));
         } else {
-            actions.add(operation);
+            File file = artifact.getFile();
+            TransformationSubject initialSubject = TransformationSubject.initial(artifactId, file);
+            TransformationOperation operation = new TransformationOperation(transformation, initialSubject, dependenciesResolver);
+            artifactResults.put(artifactId, operation);
+            // If we are here, then the transform has not been scheduled.
+            // So either
+            //   1) the transformed variant is not declared as an input for a work item or resolved at configuration time, or
+            //   2) the artifact to transform is an external artifact.
+            // For 1), we don't do any performance optimizations since transformed variants should be declared as input to some work.
+            // For 2), either the artifact has just been downloaded or it was already downloaded earlier.
+            // If it has just been downloaded, then, since downloads happen in parallel, we are already on a worker thread and we use it to execute the transform.
+            // If it has been downloaded earlier, then there is a high chance that the transformed artifact is already in a Gradle user home workspace and up-to-date.
+            // Using the BuildOperationQueue here to only realize that the result of the transformation is up-to-date in the Gradle user home workspace has a performance impact,
+            // so we are executing the up-to-date transform operation in place.
+            operation.run(null);
         }
     }
 
@@ -63,12 +91,12 @@ class TransformingAsyncArtifactListener implements ResolvedArtifactSet.AsyncArti
 
     @Override
     public void fileAvailable(File file) {
-        TransformFileOperation operation = new TransformFileOperation(file, transform);
+        TransformationSubject initialSubject = TransformationSubject.initial(file);
+        TransformationOperation operation = new TransformationOperation(transformation, initialSubject, dependenciesResolver);
         fileResults.put(file, operation);
-        if (transform.hasCachedResult(file)) {
-            operation.run(null);
-        } else {
-            actions.add(operation);
-        }
+        // We expect file transformations to be executed in an immediate way,
+        // since they cannot be scheduled early.
+        // To allow file transformations to run in parallel, we use the BuildOperationQueue.
+        actions.add(operation);
     }
 }

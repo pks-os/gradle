@@ -17,11 +17,13 @@
 package org.gradle.internal.component.local.model;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.VersionConstraint;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.api.internal.artifacts.dependencies.DefaultMutableVersionConstraint;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingProvider;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingState;
@@ -46,7 +48,7 @@ public class RootLocalComponentMetadata extends DefaultLocalComponentMetadata {
     }
 
     @Override
-    public BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, Set<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, boolean canBeResolved, ImmutableCapabilities capabilities) {
+    public BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, ImmutableSet<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, boolean canBeResolved, ImmutableCapabilities capabilities) {
         assert hierarchy.contains(name);
         DefaultLocalConfigurationMetadata conf = new RootLocalConfigurationMetadata(name, description, visible, transitive, extendsFrom, hierarchy, attributes, canBeConsumed, canBeResolved, capabilities);
         addToConfigurations(name, conf);
@@ -62,7 +64,7 @@ public class RootLocalComponentMetadata extends DefaultLocalComponentMetadata {
                                        boolean visible,
                                        boolean transitive,
                                        Set<String> extendsFrom,
-                                       Set<String> hierarchy,
+                                       ImmutableSet<String> hierarchy,
                                        ImmutableAttributes attributes,
                                        boolean canBeConsumed,
                                        boolean canBeResolved,
@@ -81,10 +83,12 @@ public class RootLocalComponentMetadata extends DefaultLocalComponentMetadata {
                 boolean strict = dependencyLockingState.mustValidateLockState();
                 for (ModuleComponentIdentifier lockedDependency : dependencyLockingState.getLockedDependencies()) {
                     String lockedVersion = lockedDependency.getVersion();
-                    VersionConstraint versionConstraint = new DefaultMutableVersionConstraint(lockedVersion, strict);
-                    ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(lockedDependency.getGroup(), lockedDependency.getModule(), versionConstraint);
+                    VersionConstraint versionConstraint = strict
+                        ? DefaultMutableVersionConstraint.withStrictVersion(lockedVersion)
+                        : DefaultMutableVersionConstraint.withVersion(lockedVersion);
+                    ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(lockedDependency.getGroup(), lockedDependency.getModule()), versionConstraint);
                     result.add(new LocalComponentDependencyMetadata(getComponentId(), selector, getName(), getAttributes(),  ImmutableAttributes.EMPTY, null,
-                        Collections.<IvyArtifactName>emptyList(),  Collections.<ExcludeMetadata>emptyList(), false, false, false, true, getLockReason(strict, lockedVersion)));
+                            Collections.<IvyArtifactName>emptyList(),  Collections.<ExcludeMetadata>emptyList(), false, false, false, true, true, getLockReason(strict, lockedVersion)));
                 }
             }
         }

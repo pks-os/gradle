@@ -21,8 +21,10 @@ import org.gradle.nativeplatform.fixtures.app.CppGreeterFunction
 import org.gradle.nativeplatform.fixtures.app.SwiftLibTest
 import org.gradle.nativeplatform.fixtures.app.SwiftLibWithCppDep
 import org.gradle.nativeplatform.fixtures.app.SwiftLibWithCppDepXCTest
+import spock.lang.Ignore
 import spock.lang.Unroll
 
+@Ignore
 class SwiftXCTestCppInteroperabilityIntegrationTest extends AbstractSwiftMixedLanguageIntegrationTest implements XCTestExecutionResult {
     def setup() {
         buildFile << """
@@ -47,9 +49,9 @@ class SwiftXCTestCppInteroperabilityIntegrationTest extends AbstractSwiftMixedLa
             }
 
             [library, xctest]*.binaries*.configureEach {
-                if (targetPlatform.operatingSystemFamily.macOs) {
+                if (targetMachine.operatingSystemFamily.macOs) {
                     linkTask.get().linkerArgs.add("-lc++")
-                } else if (targetPlatform.operatingSystemFamily.linux) {
+                } else if (targetMachine.operatingSystemFamily.linux) {
                     linkTask.get().linkerArgs.add("-lstdc++")
                 }
             }

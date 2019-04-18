@@ -35,7 +35,7 @@ import java.util.Set;
 
 public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdentifier {
     public static final String INVALID_NAME_IN_INCLUDE_HINT = "Set the 'rootProject.name' or adjust the 'include' statement (see "
-        + new DocumentationRegistry().getDslRefForProperty(Settings.class, "include(java.lang.String[])") + " for more details)";
+        + new DocumentationRegistry().getDslRefForProperty(Settings.class, "include(java.lang.String[])") + " for more details).";
 
     private static final String BUILD_SCRIPT_BASENAME = "build";
 
@@ -50,12 +50,12 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
     private Path path;
     private String buildFileName;
 
-    public DefaultProjectDescriptor(DefaultProjectDescriptor parent, String name, File dir,
+    public DefaultProjectDescriptor(@Nullable DefaultProjectDescriptor parent, String name, File dir,
                                     ProjectDescriptorRegistry projectDescriptorRegistry, PathToFileResolver fileResolver) {
         this(parent, name, dir, projectDescriptorRegistry, fileResolver, null);
     }
 
-    public DefaultProjectDescriptor(DefaultProjectDescriptor parent, String name, File dir,
+    public DefaultProjectDescriptor(@Nullable DefaultProjectDescriptor parent, String name, File dir,
                                     ProjectDescriptorRegistry projectDescriptorRegistry, PathToFileResolver fileResolver,
                                     @Nullable ScriptFileResolver scriptFileResolver) {
         this.parent = parent;

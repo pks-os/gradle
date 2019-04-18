@@ -16,8 +16,13 @@
 
 package org.gradle.api.publish.maven
 
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
+import spock.lang.IgnoreIf
 import spock.lang.Issue
+import spock.lang.Unroll
+
+import java.util.concurrent.atomic.AtomicInteger
 
 class MavenPublishMultiProjectIntegTest extends AbstractMavenPublishIntegTest {
     def project1 = javaLibrary(mavenRepo.module("org.gradle.test", "project1", "1.0"))
@@ -255,6 +260,60 @@ project(":project2") {
         project1.assertApiDependencies("org.gradle.test:project2:2.0")
     }
 
+    @Issue("https://github.com/gradle/gradle-native/issues/867")
+    @IgnoreIf({ GradleContextualExecuter.parallel })
+    def "can resolve non-build dependencies while projects are configured in parallel"() {
+        def parallelProjectCount = 20
+        using m2
+
+        given:
+        settingsFile << """
+            (0..${parallelProjectCount}).each {
+                include "producer" + it
+                include "consumer" + it
+            }
+        """
+
+        buildFile << """
+            def resolutionCount = [:].withDefault { new ${AtomicInteger.canonicalName}(0) }.asSynchronized()
+
+            subprojects {
+                apply plugin: 'java'
+                apply plugin: 'maven'
+                
+                group = "org.gradle.test"
+                version = "1.0"
+
+                tasks.named("jar") {
+                    resolutionCount[project.name].incrementAndGet()
+                    println project.name + " RESOLUTION"
+                }
+            }
+           
+            subprojects {
+                if (name.startsWith("consumer")) {
+                    dependencies {
+                        (0..${parallelProjectCount}).each {
+                            testCompile project(":producer" + it)
+                        }
+                    }
+                }
+            }
+            
+            def verify = tasks.register("verify") {
+                dependsOn ((0..${parallelProjectCount}).collect { ":consumer" + it + ":install" })
+                doLast {
+                    println resolutionCount
+                    assert !resolutionCount.empty
+                    assert !resolutionCount.values().any { it > 1 }
+                }
+            }
+        """
+
+        expect:
+        succeeds "verify", "--parallel"
+    }
+
     @Issue("GRADLE-3366")
     def "project dependency excludes are correctly reflected in pom when using maven-publish plugin"() {
         given:
@@ -318,7 +377,7 @@ project(":project2") {
         sorted[1].groupId == "commons-io"
         sorted[1].artifactId == "*"
 
-        project2.parsedModuleMetadata.variant('api') {
+        project2.parsedModuleMetadata.variant('apiElements') {
             dependency('org.gradle.test:project1:1.0') {
                 exists()
                 hasExclude('*', 'commons-collections')
@@ -328,25 +387,31 @@ project(":project2") {
         }
     }
 
-    def "publish and resolve java-library with dependency on java-library-platform"() {
+    @Unroll
+    def "publish and resolve java-library with dependency on java-platform (named #platformName)"() {
         given:
         javaLibrary(mavenRepo.module("org.test", "foo", "1.0")).withModuleMetadata().publish()
         javaLibrary(mavenRepo.module("org.test", "bar", "1.1")).withModuleMetadata().publish()
 
         settingsFile << """
-include "platform", "library"
+include "$platformName", "library"
 """
 
         buildFile << """
 allprojects {
     apply plugin: 'maven-publish'
-    apply plugin: 'java-library'
 
     group = "org.test"
     version = "1.0"
 }
 
-project(":platform") {
+project(":$platformName") {
+    apply plugin: 'java-platform'
+
+    javaPlatform {
+        allowDependencies()
+    }
+
     dependencies {
         api "org.test:foo:1.0"
         constraints {
@@ -358,14 +423,16 @@ project(":platform") {
             maven { url "${mavenRepo.uri}" }
         }
         publications {
-            maven(MavenPublication) { from components.javaLibraryPlatform }
+            maven(MavenPublication) { from components.javaPlatform }
         }
     }
 }
 
 project(":library") {
+    apply plugin: 'java-library'
+
     dependencies {
-        api project(":platform")
+        api platform(project(":$platformName"))
         api "org.test:bar"
     }
     publishing {
@@ -381,33 +448,44 @@ project(":library") {
         when:
         run "publish"
 
-        def platformModule = mavenRepo.module("org.test", "platform", "1.0")
-        def libraryModule = mavenRepo.module("org.test", "library", "1.0")
+        def platformModule = mavenRepo.module("org.test", platformName, "1.0").removeGradleMetadataRedirection()
+        def libraryModule = mavenRepo.module("org.test", "library", "1.0").removeGradleMetadataRedirection()
 
         then:
         platformModule.parsedPom.packaging == 'pom'
         platformModule.parsedPom.scopes.compile.assertDependsOn("org.test:foo:1.0")
         platformModule.parsedPom.scopes.compile.assertDependencyManagement("org.test:bar:1.1")
-        platformModule.parsedModuleMetadata.variant('api') {
+        platformModule.parsedModuleMetadata.variant('apiElements') {
             dependency("org.test:foo:1.0").exists()
             constraint("org.test:bar:1.1").exists()
             noMoreDependencies()
         }
 
         libraryModule.parsedPom.packaging == null
-        libraryModule.parsedPom.scopes.compile.assertDependsOn("org.test:bar:", "org.test:platform:1.0")
+        libraryModule.parsedPom.scopes.compile.assertDependsOn("org.test:bar:")
         libraryModule.parsedPom.scopes.compile.assertDependencyManagement()
-        libraryModule.parsedModuleMetadata.variant('api') {
+        libraryModule.parsedPom.scopes['import'].expectDependencyManagement("org.test:$platformName:1.0").hasType('pom')
+        libraryModule.parsedModuleMetadata.variant('apiElements') {
             dependency("org.test:bar:").exists()
-            dependency("org.test:platform:1.0").exists()
+            dependency("org.test:$platformName:1.0").exists()
             noMoreDependencies()
         }
 
         and:
         resolveArtifacts(platformModule) { expectFiles 'foo-1.0.jar' }
         resolveArtifacts(libraryModule) {
-            expectFiles 'bar-1.1.jar', 'foo-1.0.jar', 'library-1.0.jar'
+            withModuleMetadata {
+                expectFiles 'bar-1.1.jar', 'foo-1.0.jar', 'library-1.0.jar'
+            }
+            withoutModuleMetadata {
+                // This is caused by the dependency on the platform appearing as a dependencyManagement entry with scope=import, type=pom
+                // and thus its dependencies are ignored.
+                expectFiles 'bar-1.1.jar', 'library-1.0.jar'
+            }
         }
+
+        where:
+        platformName << ['platform', 'aplatform']
     }
 
     private void createBuildScripts(String append = "") {

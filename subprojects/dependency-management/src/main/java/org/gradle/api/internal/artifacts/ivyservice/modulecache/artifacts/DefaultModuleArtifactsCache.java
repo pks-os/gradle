@@ -17,7 +17,7 @@ package org.gradle.api.internal.artifacts.ivyservice.modulecache.artifacts;
 
 import com.google.common.base.Objects;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
-import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager;
+import org.gradle.api.internal.artifacts.ivyservice.ArtifactCacheLockingManager;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentIdentifierSerializer;
 import org.gradle.api.internal.artifacts.metadata.ComponentArtifactMetadataSerializer;
 import org.gradle.cache.PersistentIndexedCache;
@@ -32,44 +32,35 @@ import org.gradle.util.BuildCommencedTimeProvider;
 import java.math.BigInteger;
 import java.util.Set;
 
-public class DefaultModuleArtifactsCache extends InMemoryModuleArtifactsCache {
-    private final CacheLockingManager cacheLockingManager;
+public class DefaultModuleArtifactsCache extends AbstractArtifactsCache {
+    private final ArtifactCacheLockingManager artifactCacheLockingManager;
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> cache;
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> cache;
 
-    public DefaultModuleArtifactsCache(BuildCommencedTimeProvider timeProvider, CacheLockingManager cacheLockingManager) {
+    public DefaultModuleArtifactsCache(BuildCommencedTimeProvider timeProvider, ArtifactCacheLockingManager artifactCacheLockingManager) {
         super(timeProvider);
-        this.cacheLockingManager = cacheLockingManager;
+        this.artifactCacheLockingManager = artifactCacheLockingManager;
     }
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> getCache() {
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> getCache() {
         if (cache == null) {
             cache = initCache();
         }
         return cache;
     }
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> initCache() {
-        return cacheLockingManager.createCache("module-artifacts", new ModuleArtifactsKeySerializer(), new ModuleArtifactsCacheEntrySerializer());
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> initCache() {
+        return artifactCacheLockingManager.createCache("module-artifacts", new ModuleArtifactsKeySerializer(), new ModuleArtifactsCacheEntrySerializer());
     }
 
     @Override
-    protected void store(ArtifactsAtRepositoryKey key, ModuleArtifactsCacheEntry entry) {
-        super.store(key, entry);
+    protected void store(ArtifactsAtRepositoryKey key, AbstractArtifactsCache.ModuleArtifactsCacheEntry entry) {
         getCache().put(key, entry);
     }
 
     @Override
     protected ModuleArtifactsCacheEntry get(ArtifactsAtRepositoryKey key) {
-        ModuleArtifactsCacheEntry entry = super.get(key);
-        if (entry == null) {
-            entry = getCache().get(key);
-
-            if (entry != null) {
-                super.store(key, entry);
-            }
-        }
-        return entry;
+        return getCache().get(key);
     }
 
     private static class ModuleArtifactsKeySerializer extends AbstractSerializer<ArtifactsAtRepositoryKey> {

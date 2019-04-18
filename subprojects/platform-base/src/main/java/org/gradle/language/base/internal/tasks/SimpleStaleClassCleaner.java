@@ -15,26 +15,69 @@
  */
 package org.gradle.language.base.internal.tasks;
 
+import com.google.common.collect.Ordering;
+import com.google.common.collect.Sets;
+import org.gradle.api.UncheckedIOException;
 import org.gradle.api.internal.TaskOutputsInternal;
+import org.gradle.internal.execution.impl.OutputsCleaner;
+import org.gradle.internal.file.FileType;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.PriorityQueue;
+import java.util.Queue;
+import java.util.Set;
+import java.util.function.Predicate;
 
 public class SimpleStaleClassCleaner extends StaleClassCleaner {
-    private final TaskOutputsInternal taskOutputs;
+    private final Set<File> filesToDelete;
+    private final Set<File> toClean = Sets.newHashSet();
+    private final Set<String> prefixes = Sets.newHashSet();
+    private final Queue<File> directoriesToDelete = new PriorityQueue<File>(10, Ordering.natural().reverse());
     private boolean didWork;
 
     public SimpleStaleClassCleaner(TaskOutputsInternal taskOutputs) {
-        this.taskOutputs = taskOutputs;
+        this(taskOutputs.getPreviousOutputFiles());
+    }
+
+    public SimpleStaleClassCleaner(Set<File> filesToDelete) {
+        this.filesToDelete = filesToDelete;
+    }
+
+    @Override
+    public void addDirToClean(File toClean) {
+        this.toClean.add(toClean);
+        prefixes.add(toClean.getAbsolutePath() + File.separator);
     }
 
     @Override
     public void execute() {
-        for (File f : taskOutputs.getPreviousOutputFiles()) {
-            for (String prefix : prefixes) {
-                if (f.getAbsolutePath().startsWith(prefix) && f.isFile()) {
-                    didWork |= f.delete();
+        try {
+            OutputsCleaner outputsCleaner = new OutputsCleaner(new Predicate<File>() {
+                @Override
+                public boolean test(File file) {
+                    for (String prefix : prefixes) {
+                        if (file.getAbsolutePath().startsWith(prefix)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            }, new Predicate<File>() {
+                @Override
+                public boolean test(File dir) {
+                    return !toClean.contains(dir);
+                }
+            });
+            for (File f : filesToDelete) {
+                if (f.isFile()) {
+                    outputsCleaner.cleanupOutput(f, FileType.RegularFile);
                 }
             }
+            outputsCleaner.cleanupDirectories();
+            didWork |= outputsCleaner.getDidWork();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to clean up stale outputs", e);
         }
     }
 

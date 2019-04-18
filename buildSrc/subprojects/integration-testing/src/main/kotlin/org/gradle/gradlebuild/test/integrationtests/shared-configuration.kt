@@ -1,23 +1,17 @@
 package org.gradle.gradlebuild.test.integrationtests
 
-import accessors.eclipse
-import accessors.groovy
-import accessors.idea
-import accessors.java
 import org.gradle.api.Action
-import org.gradle.api.JavaVersion
 import org.gradle.api.Project
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskProvider
+
+import org.gradle.kotlin.dsl.*
+
+import accessors.eclipse
+import accessors.groovy
+import accessors.java
+
 import org.gradle.gradlebuild.java.AvailableJavaInstallations
-import org.gradle.kotlin.dsl.dependencies
-import org.gradle.kotlin.dsl.get
-import org.gradle.kotlin.dsl.getting
-import org.gradle.kotlin.dsl.invoke
-import org.gradle.kotlin.dsl.project
-import org.gradle.kotlin.dsl.the
-import org.gradle.kotlin.dsl.withType
-import org.gradle.kotlin.dsl.getValue
 import org.gradle.plugins.ide.eclipse.EclipsePlugin
 import org.gradle.plugins.ide.idea.IdeaPlugin
 
@@ -42,10 +36,10 @@ fun Project.addDependenciesAndConfigurations(testType: TestType) {
     dependencies {
         "${prefix}TestCompile"(project(":internalIntegTesting"))
 
-        //so that implicit help tasks are available:
+        // so that implicit help tasks are available:
         "${prefix}TestRuntime"(project(":diagnostics"))
 
-        //So that the wrapper and init task are added when integTests are run via commandline
+        // So that the wrapper and init task are added when integTests are run via commandline
         "${prefix}TestRuntime"(project(":buildInit"))
     }
 }
@@ -70,18 +64,30 @@ fun Project.createTasks(sourceSet: SourceSet, testType: TestType) {
     // For all of the other executers, add an executer specific task
     testType.executers.forEach { executer ->
         val taskName = "$executer${prefix.capitalize()}Test"
-        createTestTask(taskName, executer, sourceSet, testType, Action {})
+        createTestTask(taskName, executer, sourceSet, testType, Action {
+            if (testType == TestType.CROSSVERSION) {
+                // the main crossVersion test tasks always only check the latest version,
+                // for true multi-version testing, we set up a test task per Gradle version,
+                // (see CrossVersionTestsPlugin).
+                systemProperties["org.gradle.integtest.versions"] = "default"
+            }
+        })
     }
     // Use the default executer for the simply named task. This is what most developers will run when running check
     val testTask = createTestTask(prefix + "Test", defaultExecuter, sourceSet, testType, Action {})
+    // Create a variant of the test suite to force realization of component metadata
+    if (testType == TestType.INTEGRATION) {
+        createTestTask(prefix + "ForceRealizeTest", defaultExecuter, sourceSet, testType, Action {
+            systemProperties["org.gradle.integtest.force.realize.metadata"] = "true"
+        })
+    }
     tasks.named("check").configure { dependsOn(testTask) }
 }
 
 
 internal
-fun Project.createTestTask(name: String, executer: String, sourceSet: SourceSet, testType: TestType, extraConfig: Action<IntegrationTest>): TaskProvider<IntegrationTest> {
-    return tasks.register(name, IntegrationTest::class.java) {
-        addBaseConfigurationForIntegrationAndCrossVersionTestTasks(currentTestJavaVersion)
+fun Project.createTestTask(name: String, executer: String, sourceSet: SourceSet, testType: TestType, extraConfig: Action<IntegrationTest>): TaskProvider<IntegrationTest> =
+    tasks.register(name, IntegrationTest::class) {
         description = "Runs ${testType.prefix} with $executer executer"
         systemProperties["org.gradle.integtest.executer"] = executer
         addDebugProperties()
@@ -90,14 +96,6 @@ fun Project.createTestTask(name: String, executer: String, sourceSet: SourceSet,
         libsRepository.required = testType.libRepoRequired
         extraConfig.execute(this)
     }
-}
-
-
-private
-fun IntegrationTest.addBaseConfigurationForIntegrationAndCrossVersionTestTasks(currentTestJavaVersion: JavaVersion) {
-    group = "verification"
-    exclude(testExcluder.excludesForJavaVersion(currentTestJavaVersion))
-}
 
 
 private
@@ -127,9 +125,11 @@ fun Project.configureIde(testType: TestType) {
 
     // We apply lazy as we don't want to depend on the order
     plugins.withType<IdeaPlugin> {
-        idea {
+        with(model) {
             module {
-                testSourceDirs = testSourceDirs + sourceSet.groovy.srcDirs + sourceSet.resources.srcDirs
+                testSourceDirs = testSourceDirs + sourceSet.java.srcDirs
+                testSourceDirs = testSourceDirs + sourceSet.groovy.srcDirs
+                testResourceDirs = testResourceDirs + sourceSet.resources.srcDirs
                 scopes["TEST"]!!["plus"]!!.apply {
                     add(compile)
                     add(runtime)
@@ -150,30 +150,5 @@ fun Project.configureIde(testType: TestType) {
 
 
 internal
-val testExcluder = TestExcluder(excludedTests)
-
-
-internal
 val Project.currentTestJavaVersion
     get() = rootProject.the<AvailableJavaInstallations>().javaInstallationForTest.javaVersion
-
-
-internal
-class TestExcluder(excludeInputs: List<Pair<String, List<JavaVersion>>>) {
-    val excludeRules = exclude(excludeInputs)
-
-    private
-    fun exclude(pairs: List<Pair<String, List<JavaVersion>>>): Map<JavaVersion, Set<String>> {
-        val excludes = mutableMapOf<JavaVersion, MutableSet<String>>()
-        pairs.forEach { nameVersionPair ->
-            nameVersionPair.second.forEach {
-                val excludesForVersion = excludes.get(it) ?: mutableSetOf()
-                excludesForVersion.add("**/*${nameVersionPair.first}*")
-                excludes.put(it, excludesForVersion)
-            }
-        }
-        return excludes
-    }
-
-    fun excludesForJavaVersion(version: JavaVersion) = excludeRules[version] ?: emptySet()
-}

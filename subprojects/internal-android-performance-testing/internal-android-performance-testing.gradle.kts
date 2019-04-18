@@ -5,7 +5,7 @@ plugins {
 }
 
 val androidTools by configurations.creating
-configurations.compile.extendsFrom(androidTools)
+configurations.compile { extendsFrom(androidTools) }
 
 repositories {
     google()
@@ -25,18 +25,19 @@ application {
     applicationName = "android-test-app"
 }
 
-tasks {
-    "buildClassPath"(BuildClassPath::class) {
-        val jar: Jar by getting
-        dependsOn(jar)
-        classpath = androidTools + files(jar.archivePath)
-        outputFile = buildDir.resolve("classpath.txt")
-    }
+tasks.register<BuildClassPath>("buildClassPath") {
+    val jar: Jar by tasks
+    dependsOn(jar)
+    classpath = androidTools + files(jar.archivePath)
+    outputFile = buildDir.resolve("classpath.txt")
+}
 
-    val distZip: Zip by getting
-    val distTar: Tar by getting
-    listOf(distZip, distTar).forEach { it.baseName = "android-test-app" }
-    project(":distributions").tasks["buildDists"].dependsOn(distZip)
+listOf(tasks.distZip, tasks.distTar).forEach {
+    it { baseName = "android-test-app" }
+}
+
+project(":distributions").tasks.register("buildDists") {
+    dependsOn(tasks.distZip)
 }
 
 

@@ -21,11 +21,11 @@ import org.gradle.api.Action;
 import org.gradle.integtests.fixtures.logging.GroupedOutputFixture;
 import org.gradle.internal.Pair;
 import org.gradle.internal.featurelifecycle.LoggingDeprecatedFeatureHandler;
-import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.launcher.daemon.client.DaemonStartupMessage;
 import org.gradle.launcher.daemon.server.DaemonStateCoordinator;
-import org.gradle.launcher.daemon.server.health.LowTenuredSpaceDaemonExpirationStrategy;
+import org.gradle.launcher.daemon.server.health.LowHeapSpaceDaemonExpirationStrategy;
 import org.gradle.util.GUtil;
+import org.junit.ComparisonFailure;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -45,7 +45,7 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     //for example: ':hey' or ':a SKIPPED' or ':foo:bar:baz UP-TO-DATE' but not ':a FOO'
     private static final Pattern TASK_PATTERN = Pattern.compile("(> Task )?(:\\S+?(:\\S+?)*)((\\s+SKIPPED)|(\\s+UP-TO-DATE)|(\\s+FROM-CACHE)|(\\s+NO-SOURCE)|(\\s+FAILED)|(\\s*))");
 
-    private static final Pattern BUILD_RESULT_PATTERN = Pattern.compile("BUILD (SUCCESSFUL|FAILED) in( \\d+[smh])+");
+    private static final Pattern BUILD_RESULT_PATTERN = Pattern.compile("BUILD (SUCCESSFUL|FAILED) in( \\d+m?[smh])+");
 
     private final LogContent output;
     private final LogContent error;
@@ -83,7 +83,7 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
         this.error = error;
 
         // Split out up the output into main content and post build content
-        LogContent filteredOutput = this.output.removeAnsiChars().removeDebugPrefix();
+        LogContent filteredOutput = this.output.ansiCharsToPlainText().removeDebugPrefix();
         Pair<LogContent, LogContent> match = filteredOutput.splitOnFirstMatchingLine(BUILD_RESULT_PATTERN);
         if (match == null) {
             this.mainContent = filteredOutput;
@@ -92,7 +92,7 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
             this.mainContent = match.getLeft();
             this.postBuild = match.getRight().drop(1);
         }
-        this.errorContent = error.removeAnsiChars();
+        this.errorContent = error.ansiCharsToPlainText();
     }
 
     public String getOutput() {
@@ -112,9 +112,19 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     }
 
     @Override
+    public String getFormattedOutput() {
+        return output.ansiCharsToColorText().withNormalizedEol();
+    }
+
+    @Override
+    public String getPlainTextOutput() {
+        return output.ansiCharsToPlainText().withNormalizedEol();
+    }
+
+    @Override
     public GroupedOutputFixture getGroupedOutput() {
         if (groupedOutputFixture == null) {
-            groupedOutputFixture = new GroupedOutputFixture(getMainContent().getRawContent().withNormalizedEol());
+            groupedOutputFixture = new GroupedOutputFixture(getMainContent());
         }
         return groupedOutputFixture;
     }
@@ -131,18 +141,12 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
             } else if (line.contains(DaemonStateCoordinator.DAEMON_WILL_STOP_MESSAGE)) {
                 // Remove the "Daemon will be shut down" message
                 i++;
-            } else if (line.contains(LowTenuredSpaceDaemonExpirationStrategy.EXPIRE_DAEMON_MESSAGE)) {
+            } else if (line.contains(LowHeapSpaceDaemonExpirationStrategy.EXPIRE_DAEMON_MESSAGE)) {
                 // Remove the "Expiring Daemon" message
                 i++;
             } else if (line.contains(LoggingDeprecatedFeatureHandler.WARNING_SUMMARY)) {
                 // Remove the "Deprecated Gradle features..." message and "See https://docs.gradle.org..."
                 i+=2;
-            } else if (line.contains(UnsupportedJavaRuntimeException.JAVA7_DEPRECATION_WARNING)) {
-                // Remove the Java 7 deprecation warning. This should be removed after 5.0
-                i++;
-                while (i < lines.size() && STACK_TRACE_ELEMENT.matcher(lines.get(i)).matches()) {
-                    i++;
-                }
             } else if (BUILD_RESULT_PATTERN.matcher(line).matches()) {
                 result.add(BUILD_RESULT_PATTERN.matcher(line).replaceFirst("BUILD $1 in 0s"));
                 i++;
@@ -170,7 +174,7 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     public ExecutionResult assertNotOutput(String expectedOutput) {
         String expectedText = LogContent.of(expectedOutput).withNormalizedEol();
         if (getOutput().contains(expectedText)|| getError().contains(expectedText)) {
-            throw new AssertionError(String.format("Found unexpected text in build output.%nExpected not present: %s%n%nOutput:%n=======%n%s%nError:%n======%n%s", expectedText, getOutput(), getError()));
+            failureOnUnexpectedOutput(String.format("Found unexpected text in build output.%nExpected not present: %s%n", expectedText));
         }
         return this;
     }
@@ -197,16 +201,6 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     @Override
     public ExecutionResult assertHasErrorOutput(String expectedOutput) {
         return assertContentContains(errorContent.withNormalizedEol(), expectedOutput, "Error output");
-    }
-
-    @Override
-    public ExecutionResult assertHasRawErrorOutput(String expectedOutput) {
-        return assertContentContains(getError(), expectedOutput, "Error output");
-    }
-
-    @Override
-    public ExecutionResult assertRawOutputContains(String expectedOutput) {
-        return assertContentContains(getOutput(), expectedOutput, "Build output");
     }
 
     public String getError() {
@@ -239,6 +233,12 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
             failOnDifferentSets("Build output does not contain the expected tasks.", expectedTasks, actualTasks);
         }
         return this;
+    }
+
+    @Override
+    public ExecutionResult assertTasksExecutedAndNotSkipped(Object... taskPaths) {
+        assertTasksExecuted(taskPaths);
+        return assertTasksNotSkipped(taskPaths);
     }
 
     @Override
@@ -313,15 +313,23 @@ public class OutputScrapingExecutionResult implements ExecutionResult {
     }
 
     private void failOnDifferentSets(String message, Set<String> expected, Set<String> actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%nActual: %s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, actual, getOutput(), getError()));
+        failureOnUnexpectedOutput(String.format("%s%nExpected: %s%nActual: %s", message, expected, actual));
     }
 
     private void failOnMissingElement(String message, String expected, Set<String> actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%nActual: %s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, actual, getOutput(), getError()));
+        failureOnUnexpectedOutput(String.format("%s%nExpected: %s%nActual: %s", message, expected, actual));
     }
 
     private void failOnMissingOutput(String message, String type, String expected, String actual) {
-        throw new AssertionError(String.format("%s%nExpected: %s%n%n%s:%n=======%n%s%nOutput:%n=======%n%s%nError:%n======%n%s", message, expected, type, actual, getOutput(), getError()));
+        throw new ComparisonFailure(unexpectedOutputMessage(String.format("%s%nExpected: %s%n%n%s:%n=======%n%s", message, expected, type, actual)), expected, actual);
+    }
+
+    protected void failureOnUnexpectedOutput(String message) {
+        throw new AssertionError(unexpectedOutputMessage(message));
+    }
+
+    private String unexpectedOutputMessage(String message) {
+        return String.format("%s%nOutput:%n=======%n%s%nError:%n======%n%s", message, getOutput(), getError());
     }
 
     private List<String> grepTasks(final Pattern pattern) {

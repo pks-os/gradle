@@ -18,30 +18,26 @@ package org.gradle.composite.internal;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import org.gradle.BuildAdapter;
-import org.gradle.BuildListener;
 import org.gradle.BuildResult;
 import org.gradle.api.GradleException;
 import org.gradle.api.Task;
-import org.gradle.api.execution.TaskExecutionAdapter;
 import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.api.execution.TaskExecutionGraphListener;
+import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.execution.MultipleBuildFailures;
-import org.gradle.initialization.ReportedException;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.build.IncludedBuildState;
 import org.gradle.internal.concurrent.Stoppable;
+import org.gradle.internal.resources.ResourceLockCoordinationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -53,34 +49,44 @@ import static org.gradle.composite.internal.IncludedBuildTaskResource.State.WAIT
 class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBuildController {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultIncludedBuildController.class);
     private final IncludedBuildState includedBuild;
+    private final ResourceLockCoordinationService coordinationService;
 
-    private final Map<String, TaskState> tasks = Maps.newLinkedHashMap();
-    private final Set<String> tasksAdded = Sets.newHashSet();
-    private final List<Throwable> taskFailures = new ArrayList<Throwable>();
+    private enum State {
+        CollectingTasks, RunningTasks
+    }
 
     // Fields guarded by lock
     private final Lock lock = new ReentrantLock();
-    private final Condition taskQueued = lock.newCondition();
-    private final Condition taskCompleted = lock.newCondition();
+    private final Condition stateChange = lock.newCondition();
+    private final Map<String, TaskState> tasks = Maps.newLinkedHashMap();
+    private final Set<String> tasksAdded = Sets.newHashSet();
+    private final List<Throwable> taskFailures = new ArrayList<Throwable>();
+    private State state = State.CollectingTasks;
+    private boolean stopRequested;
 
-    private final CountDownLatch started = new CountDownLatch(1);
-    private final AtomicBoolean stopRequested = new AtomicBoolean();
-    private final CountDownLatch stopped = new CountDownLatch(1);
-
-    public DefaultIncludedBuildController(IncludedBuildState includedBuild) {
+    public DefaultIncludedBuildController(IncludedBuildState includedBuild, ResourceLockCoordinationService coordinationService) {
         this.includedBuild = includedBuild;
+        this.coordinationService = coordinationService;
     }
 
     @Override
     public boolean populateTaskGraph() {
         Set<String> tasksToExecute = Sets.newLinkedHashSet();
-        for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
-            if (taskEntry.getValue().status == TaskStatus.QUEUED) {
-                String taskName = taskEntry.getKey();
-                if (tasksAdded.add(taskName)) {
-                    tasksToExecute.add(taskName);
+        lock.lock();
+        try {
+            if (state != State.CollectingTasks) {
+                throw new IllegalStateException();
+            }
+            for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
+                if (taskEntry.getValue().status == TaskStatus.QUEUED) {
+                    String taskName = taskEntry.getKey();
+                    if (tasksAdded.add(taskName)) {
+                        tasksToExecute.add(taskName);
+                    }
                 }
             }
+        } finally {
+            lock.unlock();
         }
         if (tasksToExecute.isEmpty()) {
             return false;
@@ -91,77 +97,92 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
 
     @Override
     public void run() {
-        try {
-            started.await();
-        } catch (InterruptedException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
-        }
-        while (!stopRequested.get()) {
+        while (true) {
             Set<String> tasksToExecute = getQueuedTasks();
+            if (tasksToExecute == null) {
+                return;
+            }
             try {
                 doBuild(tasksToExecute);
-            } catch (ReportedException e) {
-                // Ignore: we record failure in the BuildListener during the build
+            } finally {
+                setState(State.CollectingTasks);
             }
         }
-        stopped.countDown();
+    }
+
+    private void setState(State state) {
+        lock.lock();
+        try {
+            this.state = state;
+            stateChange.signalAll();
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
     public void startTaskExecution() {
-        started.countDown();
+        setState(State.RunningTasks);
     }
 
     @Override
-    public void stopTaskExecution(Collection<? super Throwable> taskFailures) {
-        stop();
-        taskFailures.addAll(this.taskFailures);
-    }
-
-    public void stop() {
-        stopRequested.set(true);
-        started.countDown();
-
+    public void awaitTaskCompletion(Collection<? super Throwable> taskFailures) {
         lock.lock();
         try {
-            taskQueued.signalAll();
-        } finally {
-            lock.unlock();
-        }
-
-        try {
-            stopped.await();
-        } catch (InterruptedException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
-        }
-    }
-
-    private Set<String> getQueuedTasks() {
-        lock.lock();
-        try {
-            while (!stopRequested.get()) {
-                Set<String> tasksToExecute = Sets.newLinkedHashSet();
-                for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
-                    if (taskEntry.getValue().status == TaskStatus.QUEUED) {
-                        tasksToExecute.add(taskEntry.getKey());
-                        taskEntry.getValue().status = TaskStatus.EXECUTING;
-                    }
-                }
-                if (!tasksToExecute.isEmpty()) {
-                    return tasksToExecute;
-                }
-
+            while (state == State.RunningTasks) {
                 try {
-                    taskQueued.await();
+                    stateChange.await();
                 } catch (InterruptedException e) {
                     throw UncheckedException.throwAsUncheckedException(e);
                 }
             }
+            taskFailures.addAll(this.taskFailures);
+            this.taskFailures.clear();
         } finally {
             lock.unlock();
         }
+    }
 
-        return Collections.emptySet();
+    public void stop() {
+        ArrayList<Throwable> failures = new ArrayList<Throwable>();
+        awaitTaskCompletion(failures);
+        if (!failures.isEmpty()) {
+            throw new MultipleBuildFailures(failures);
+        }
+        lock.lock();
+        try {
+            stopRequested = true;
+            stateChange.signalAll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Nullable
+    private Set<String> getQueuedTasks() {
+        lock.lock();
+        try {
+            while (state == State.CollectingTasks && !stopRequested) {
+                try {
+                    stateChange.await();
+                } catch (InterruptedException e) {
+                    throw UncheckedException.throwAsUncheckedException(e);
+                }
+            }
+            if (stopRequested) {
+                return null;
+            }
+            Set<String> tasksToExecute = Sets.newLinkedHashSet();
+            for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
+                if (taskEntry.getValue().status == TaskStatus.QUEUED) {
+                    tasksToExecute.add(taskEntry.getKey());
+                    taskEntry.getValue().status = TaskStatus.EXECUTING;
+                }
+            }
+            return tasksToExecute;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private void doBuild(final Collection<String> tasksToExecute) {
@@ -170,39 +191,59 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
         }
         LOGGER.info("Executing " + includedBuild.getName() + " tasks " + tasksToExecute);
         IncludedBuildExecutionListener listener = new IncludedBuildExecutionListener(tasksToExecute);
-        includedBuild.execute(tasksToExecute, listener);
+        try {
+            includedBuild.execute(tasksToExecute, listener);
+            tasksDone(tasksToExecute, null);
+        } catch (RuntimeException failure) {
+            tasksDone(tasksToExecute, failure);
+        }
     }
 
     private void taskCompleted(String task, Throwable failure) {
         lock.lock();
         try {
             TaskState taskState = tasks.get(task);
+            if (taskState == null) {
+                taskState = new TaskState();
+                tasks.put(task, taskState);
+            }
             taskState.status = failure == null ? TaskStatus.SUCCESS : TaskStatus.FAILED;
-            taskCompleted.signalAll();
         } finally {
             lock.unlock();
         }
+        // Notify threads that may be waiting on this task to complete.
+        // This is required because although all builds may share the same coordination service, the 'something may have changed' event that is fired when a task in this build completes
+        // happens before the state tracked here is updated, and so the worker threads in the consuming build may think the task has not completed and go back to sleep waiting for some
+        // other event to happen, which may not. Signalling again here means that all worker threads in all builds will be woken up which can be expensive.
+        // It would be much better to avoid duplicating the task state here and instead have the task executors communicate directly with each other, possibly via some abstraction
+        // that represents the task outcome
+        coordinationService.notifyStateChange();
     }
 
-    private void tasksDone(Collection<String> tasksExecuted, BuildResult result) {
+    private void tasksDone(Collection<String> tasksExecuted, @Nullable RuntimeException failure) {
+        boolean someTasksNotCompleted = false;
         lock.lock();
         try {
             for (String task : tasksExecuted) {
                 TaskState taskState = tasks.get(task);
                 if (taskState.status == TaskStatus.EXECUTING) {
                     taskState.status = TaskStatus.FAILED;
+                    someTasksNotCompleted = true;
                 }
             }
-            if (result.getFailure() != null) {
-                if (result.getFailure() instanceof MultipleBuildFailures) {
-                    taskFailures.addAll(((MultipleBuildFailures) result.getFailure()).getCauses());
+            if (failure != null) {
+                if (failure instanceof MultipleBuildFailures) {
+                    taskFailures.addAll(((MultipleBuildFailures) failure).getCauses());
                 } else {
-                    taskFailures.add(result.getFailure());
+                    taskFailures.add(failure);
                 }
             }
-            taskCompleted.signalAll();
         } finally {
             lock.unlock();
+        }
+        if (someTasksNotCompleted) {
+            // See the comment in #taskCompleted, above, for why this is here and why this is a problem
+            coordinationService.notifyStateChange();
         }
     }
 
@@ -210,24 +251,12 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
     public void queueForExecution(String taskPath) {
         lock.lock();
         try {
+            if (state != State.CollectingTasks) {
+                throw new IllegalStateException();
+            }
             if (!tasks.containsKey(taskPath)) {
                 tasks.put(taskPath, new TaskState());
-                taskQueued.signalAll();
             }
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    @Override
-    public void awaitCompletion(String taskPath) {
-        lock.lock();
-        try {
-            while (getTaskState(taskPath) == WAITING) {
-                taskCompleted.await();
-            }
-        } catch (InterruptedException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
         } finally {
             lock.unlock();
         }
@@ -253,17 +282,17 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
         }
     }
 
-    private enum TaskStatus { QUEUED, EXECUTING, FAILED, SUCCESS }
+    private enum TaskStatus {QUEUED, EXECUTING, FAILED, SUCCESS}
 
     private static class TaskState {
         public BuildResult result;
         public TaskStatus status = TaskStatus.QUEUED;
     }
 
-    private class IncludedBuildExecutionListener extends BuildAdapter implements TaskExecutionGraphListener, BuildListener {
+    private class IncludedBuildExecutionListener implements TaskExecutionGraphListener, TaskExecutionListener {
         private final Collection<String> tasksToExecute;
 
-        public IncludedBuildExecutionListener(Collection<String> tasksToExecute) {
+        IncludedBuildExecutionListener(Collection<String> tasksToExecute) {
             this.tasksToExecute = tasksToExecute;
         }
 
@@ -274,24 +303,17 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
                     throw new GradleException("Task '" + task + "' not found in build '" + includedBuild.getName() + "'.");
                 }
             }
-
-            taskExecutionGraph.addTaskExecutionListener(new TaskCompletionRecorder());
         }
 
         @Override
-        public void buildFinished(BuildResult result) {
-            tasksDone(tasksToExecute, result);
+        public void beforeExecute(Task task) {
         }
 
-        private class TaskCompletionRecorder extends TaskExecutionAdapter {
-            @Override
-            public void afterExecute(Task task, org.gradle.api.tasks.TaskState state) {
-                String taskPath = task.getPath();
-                Throwable failure = state.getFailure();
-                if (tasksToExecute.contains(taskPath)) {
-                    taskCompleted(taskPath, failure);
-                }
-            }
+        @Override
+        public void afterExecute(Task task, org.gradle.api.tasks.TaskState state) {
+            String taskPath = task.getPath();
+            Throwable failure = state.getFailure();
+            taskCompleted(taskPath, failure);
         }
     }
 }

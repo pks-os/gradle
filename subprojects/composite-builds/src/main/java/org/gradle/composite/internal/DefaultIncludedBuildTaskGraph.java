@@ -25,6 +25,8 @@ import org.gradle.internal.component.local.model.DefaultProjectComponentSelector
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 import org.gradle.util.Path;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 public class DefaultIncludedBuildTaskGraph implements IncludedBuildTaskGraph {
@@ -47,13 +49,12 @@ public class DefaultIncludedBuildTaskGraph implements IncludedBuildTaskGraph {
     }
 
     @Override
-    public void awaitCompletion(BuildIdentifier targetBuild, String taskPath) {
+    public void awaitTaskCompletion(Collection<? super Throwable> taskFailures) {
         // Start task execution if necessary: this is required for building plugin artifacts,
         // since these are built on-demand prior to the regular start signal for included builds.
         includedBuilds.populateTaskGraphs();
         includedBuilds.startTaskExecution();
-
-        getBuildController(targetBuild).awaitCompletion(taskPath);
+        includedBuilds.awaitTaskCompletion(taskFailures);
     }
 
     @Override
@@ -71,8 +72,8 @@ public class DefaultIncludedBuildTaskGraph implements IncludedBuildTaskGraph {
         for (BuildIdentifier nextTarget : buildDependencies.get(targetBuild)) {
             if (sourceBuild.equals(nextTarget)) {
                 candidateCycle.add(nextTarget);
-                ProjectComponentSelector selector = new DefaultProjectComponentSelector(candidateCycle.get(0), Path.ROOT, Path.ROOT, ":", ImmutableAttributes.EMPTY);
-                throw new ModuleVersionResolveException(selector, "Included build dependency cycle: " + reportCycle(candidateCycle));
+                ProjectComponentSelector selector = new DefaultProjectComponentSelector(candidateCycle.get(0), Path.ROOT, Path.ROOT, ":", ImmutableAttributes.EMPTY, Collections.emptyList());
+                throw new ModuleVersionResolveException(selector, () -> "Included build dependency cycle: " + reportCycle(candidateCycle));
             }
 
             checkNoCycles(sourceBuild, nextTarget, candidateCycle);

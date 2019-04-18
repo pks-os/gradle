@@ -91,6 +91,7 @@ public abstract class Actions {
      * @param <T> The type of the object that action is for
      * @return The composite action.
      */
+    @SafeVarargs
     public static <T> Action<T> composite(Action<? super T>... actions) {
         List<Action<? super T>> filtered = Lists.newArrayListWithCapacity(actions.length);
         for (Action<? super T> action : actions) {
@@ -187,7 +188,7 @@ public abstract class Actions {
      * @param runnable The runnable to run for the action execution.
      * @return An action that runs the given runnable, ignoring the argument.
      */
-    public static <T> Action<T> toAction(Runnable runnable) {
+    public static <T> Action<T> toAction(@Nullable Runnable runnable) {
         //TODO SF this method accepts Closure instance as parameter but does not work correctly for it
         if (runnable == null) {
             return Actions.doNothing();
@@ -214,7 +215,7 @@ public abstract class Actions {
     }
 
     /**
-     * Creates a new action that only forwards arguments on to the given filter is they are satisfied by the given spec.
+     * Creates a new action that only forwards arguments on to the given filter if they are satisfied by the given spec.
      *
      * @param action The action to delegate filtered items to
      * @param filter The spec to use to filter items by

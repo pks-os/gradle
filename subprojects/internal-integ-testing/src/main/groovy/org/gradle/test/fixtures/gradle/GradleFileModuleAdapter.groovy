@@ -17,7 +17,7 @@
 package org.gradle.test.fixtures.gradle
 
 import groovy.json.JsonBuilder
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.ModuleMetadataParser
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.GradleModuleMetadataParser
 import org.gradle.test.fixtures.file.TestFile
 
 class GradleFileModuleAdapter {
@@ -40,7 +40,7 @@ class GradleFileModuleAdapter {
         def file = moduleDir.file("$module-${version}.module")
         def jsonBuilder = new JsonBuilder()
         jsonBuilder {
-            formatVersion ModuleMetadataParser.FORMAT_VERSION
+            formatVersion GradleModuleMetadataParser.FORMAT_VERSION
             builtBy {
                 gradle { }
             }
@@ -73,7 +73,13 @@ class GradleFileModuleAdapter {
                             group d.group
                             module d.module
                             version {
-                                prefers d.prefers
+                                if (d.strictVersion) {
+                                    strictly d.strictVersion
+                                } else if (d.version) {
+                                    requires d.version
+                                } else if (d.preferredVersion) {
+                                    prefers d.preferredVersion
+                                }
                                 rejects d.rejects
                             }
                             if (d.reason) {
@@ -94,6 +100,15 @@ class GradleFileModuleAdapter {
                                     }
                                 }
                             }
+                            if (d.requestedCapabilities) {
+                                requestedCapabilities(d.requestedCapabilities.collect { c ->
+                                    { ->
+                                        group c.group
+                                        name c.name
+                                        version c.version
+                                    }
+                                })
+                            }
                         }
                     })
                     dependencyConstraints(v.dependencyConstraints.collect { dc ->
@@ -101,8 +116,12 @@ class GradleFileModuleAdapter {
                             group dc.group
                             module dc.module
                             version {
-                                if (dc.prefers) {
-                                    prefers dc.prefers
+                                if (dc.strictVersion) {
+                                    strictly dc.strictVersion
+                                } else if (dc.version) {
+                                    requires dc.version
+                                } else if (dc.preferredVersion) {
+                                    prefers dc.preferredVersion
                                 }
                                 if (dc.rejects) {
                                     rejects dc.rejects

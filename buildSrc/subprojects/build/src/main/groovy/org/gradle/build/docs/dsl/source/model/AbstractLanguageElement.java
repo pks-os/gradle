@@ -21,10 +21,12 @@ import org.gradle.api.Transformer;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public abstract class AbstractLanguageElement implements LanguageElement, Serializable {
     private String rawCommentText;
     private final List<String> annotationNames = new ArrayList<String>();
+    private String replacement;
 
     protected AbstractLanguageElement() {
     }
@@ -57,9 +59,39 @@ public abstract class AbstractLanguageElement implements LanguageElement, Serial
         return annotationNames.contains("org.gradle.api.Incubating");
     }
 
+    public boolean isReplaced() {
+        return annotationNames.contains("org.gradle.api.model.ReplacedBy");
+    }
+
+    public String getReplacement() {
+        return replacement;
+    }
+
+    public void setReplacement(String replacement) {
+        this.replacement = replacement;
+    }
+
     public void resolveTypes(Transformer<String, String> transformer) {
         for (int i = 0; i < annotationNames.size(); i++) {
             annotationNames.set(i, transformer.transform(annotationNames.get(i)));
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        AbstractLanguageElement that = (AbstractLanguageElement) o;
+        return Objects.equals(rawCommentText, that.rawCommentText) &&
+            Objects.equals(annotationNames, that.annotationNames);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(rawCommentText, annotationNames);
     }
 }

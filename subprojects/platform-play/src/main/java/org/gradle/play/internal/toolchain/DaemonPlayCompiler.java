@@ -16,13 +16,13 @@
 
 package org.gradle.play.internal.toolchain;
 
-import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.daemon.AbstractDaemonCompiler;
 import org.gradle.api.tasks.compile.BaseForkOptions;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.play.internal.spec.PlayCompileSpec;
 import org.gradle.process.JavaForkOptions;
+import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DaemonForkOptionsBuilder;
 import org.gradle.workers.internal.KeepAliveMode;
@@ -33,31 +33,28 @@ import java.io.File;
 public class DaemonPlayCompiler<T extends PlayCompileSpec> extends AbstractDaemonCompiler<T> {
     private final Iterable<File> compilerClasspath;
     private final Iterable<String> classLoaderPackages;
-    private final FileResolver fileResolver;
+    private final JavaForkOptionsFactory forkOptionsFactory;
     private final File daemonWorkingDir;
 
-    public DaemonPlayCompiler(File daemonWorkingDir, Compiler<T> compiler, WorkerDaemonFactory workerDaemonFactory, Iterable<File> compilerClasspath, Iterable<String> classLoaderPackages, FileResolver fileResolver) {
+    public DaemonPlayCompiler(File daemonWorkingDir, Compiler<T> compiler, WorkerDaemonFactory workerDaemonFactory, Iterable<File> compilerClasspath, Iterable<String> classLoaderPackages, JavaForkOptionsFactory forkOptionsFactory) {
         super(compiler, workerDaemonFactory);
         this.compilerClasspath = compilerClasspath;
         this.classLoaderPackages = classLoaderPackages;
-        this.fileResolver = fileResolver;
+        this.forkOptionsFactory = forkOptionsFactory;
         this.daemonWorkingDir = daemonWorkingDir;
     }
 
     @Override
-    protected InvocationContext toInvocationContext(PlayCompileSpec spec) {
+    protected DaemonForkOptions toDaemonForkOptions(PlayCompileSpec spec) {
         BaseForkOptions forkOptions = spec.getForkOptions();
-        JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(fileResolver).transform(forkOptions);
-        File invocationWorkingDir = javaForkOptions.getWorkingDir();
+        JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(forkOptions);
         javaForkOptions.setWorkingDir(daemonWorkingDir);
 
-        DaemonForkOptions daemonForkOptions = new DaemonForkOptionsBuilder(fileResolver)
+        return new DaemonForkOptionsBuilder(forkOptionsFactory)
             .javaForkOptions(javaForkOptions)
             .classpath(compilerClasspath)
             .sharedPackages(classLoaderPackages)
             .keepAliveMode(KeepAliveMode.SESSION)
             .build();
-
-        return new InvocationContext(invocationWorkingDir, daemonForkOptions);
     }
 }

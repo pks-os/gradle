@@ -20,6 +20,8 @@ package org.gradle.java.compile.incremental
 import groovy.transform.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.CompilationOutputsFixture
+import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
 import spock.lang.Issue
 import spock.lang.Unroll
 
@@ -33,9 +35,6 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
         buildFile << """
             subprojects {
                 apply plugin: 'java'
-                tasks.withType(JavaCompile) {
-                    options.incremental = true
-                }
                 ${mavenCentralRepository()}
             }
             $projectDependencyBlock
@@ -44,6 +43,8 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
     }
 
     protected abstract String getProjectDependencyBlock()
+
+    protected abstract void addDependency(String from, String to)
 
     private File java(Map projectToClassBodies) {
         File out
@@ -72,17 +73,66 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
         impl.recompiledClasses("ImplA")
     }
 
-    def "detects change to transitive dependency in an upstream project"() {
-        java api: ["class A {}", "class B extends A {}"]
-        java impl: ["class SomeImpl {}", "class ImplB extends B {}", "class ImplB2 extends ImplB {}"]
-        impl.snapshot { run "compileJava" }
+    def "detects change to transitive superclass in an upstream project"() {
+        settingsFile << """
+            include 'app'
+        """
+        addDependency("app", "impl")
+        def app = new CompilationOutputsFixture(file("app/build/classes"))
+        java api: ["class A {}"]
+        java impl: ["class B extends A {}"]
+        java app: ["class Unrelated {}", "class C extends B {}", "class D extends C {}"]
+        app.snapshot { run "compileJava" }
 
         when:
         java api: ["class A { String change; }"]
-        run "impl:compileJava"
+        run "app:compileJava"
 
         then:
-        impl.recompiledClasses("ImplB", "ImplB2")
+        app.recompiledClasses("C", "D")
+    }
+
+    def "detects change to transitive dependency in an upstream project"() {
+        settingsFile << """
+            include 'app'
+        """
+        addDependency("app", "impl")
+        def app = new CompilationOutputsFixture(file("app/build/classes"))
+        java api: ["class A {}"]
+        java impl: ["class B { public A a;}"]
+        java app: ["class Unrelated {}", "class C { public B b; }"]
+        app.snapshot { run "compileJava" }
+
+        when:
+        java api: ["class A { String change; }"]
+        run "app:compileJava"
+
+        then:
+        app.recompiledClasses("C")
+    }
+
+    def "detects deletions of transitive dependency in an upstream project"() {
+        settingsFile << """
+            include 'app'
+        """
+        addDependency("app", "impl")
+        def app = new CompilationOutputsFixture(file("app/build/classes"))
+        java api: ["class A {}"]
+        java impl: ["class B { public A a;}"]
+        java app: ["class Unrelated {}", "class C { public B b; }"]
+        app.snapshot {
+            impl.snapshot {
+                run "compileJava"
+            }
+        }
+
+        when:
+        file("api/src/main/java/A.java").delete()
+        run "app:compileJava", "-x", "impl:compileJava"
+
+        then:
+        impl.noneRecompiled()
+        app.recompiledClasses("C")
     }
 
     def "deletion of jar without dependents does not recompile any classes"() {
@@ -600,7 +650,7 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
     }
 
     @Unroll
-    def "recompiles outermost class when #visibility inner class constains constant reference"() {
+    def "recompiles outermost class when #visibility inner class contains constant reference"() {
         java api: [
             "class A { public static final int EVIL = 666; }",
         ], impl: [
@@ -732,7 +782,7 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
         run 'impl:compileJava'
 
         then:
-        !output.contains(':api:compileJava - is not incremental (e.g. outputs have changed, no previous execution, etc.).')
+        !output.contains('Full recompilation is required because no incremental change information is available. This is usually caused by clean builds or changing compiler arguments.')
         impl.recompiledClasses("ImplA")
     }
 
@@ -817,5 +867,58 @@ abstract class AbstractCrossTaskIncrementalJavaCompilationIntegrationTest extend
 
         then:
         impl.recompiledClasses 'A', 'B', 'C'
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "recompiles when upstream module-info changes"() {
+        file("api/src/main/java/a/A.java").text = "package a; public class A {}"
+        file("impl/src/main/java/b/B.java").text = "package b; import a.A; class B extends A {}"
+        def moduleInfo = file("api/src/main/java/module-info.java")
+        moduleInfo.text = """
+            module api {
+                exports a;
+            }
+        """
+        file("impl/src/main/java/module-info.java").text = """
+            module impl {
+                requires api;
+            }
+        """
+        file("impl/build.gradle") << """
+            compileJava.doFirst {
+                options.compilerArgs << "--module-path" << classpath.join(File.pathSeparator)
+                classpath = files()
+            }
+        """
+        succeeds "impl:compileJava"
+
+        when:
+        moduleInfo.text = """
+            module api {
+            }
+        """
+
+        then:
+        fails "impl:compileJava"
+        result.hasErrorOutput("package a is not visible")
+    }
+
+    def "recompiles downstream dependents of classes whose package-info changed"() {
+        given:
+        def packageFile = file("api/src/main/java/foo/package-info.java")
+        packageFile.text = """package foo;"""
+        file("api/src/main/java/foo/A.java").text = "package foo; public class A {}"
+        file("api/src/main/java/bar/B.java").text = "package bar; public class B {}"
+        file("impl/src/main/java/baz/C.java").text = "package baz; import foo.A; class C extends A {}"
+        file("impl/src/main/java/baz/D.java").text = "package baz; import bar.B; class D extends B {}"
+
+        impl.snapshot { succeeds 'impl:compileJava' }
+
+        when:
+        packageFile.text = """@Deprecated package foo;"""
+        succeeds 'impl:compileJava'
+
+        then:
+        impl.recompiledClasses("C")
     }
 }

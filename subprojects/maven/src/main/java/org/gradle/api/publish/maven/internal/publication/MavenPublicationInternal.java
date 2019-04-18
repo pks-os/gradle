@@ -19,6 +19,7 @@ package org.gradle.api.publish.maven.internal.publication;
 import org.gradle.api.Task;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.publish.internal.PublicationInternal;
+import org.gradle.api.publish.internal.versionmapping.VersionMappingStrategyInternal;
 import org.gradle.api.publish.maven.MavenArtifact;
 import org.gradle.api.publish.maven.MavenDependency;
 import org.gradle.api.publish.maven.MavenPublication;
@@ -48,9 +49,13 @@ public interface MavenPublicationInternal extends MavenPublication, PublicationI
 
     Set<MavenDependency> getRuntimeDependencyConstraints();
 
+    Set<MavenDependency> getImportDependencyConstraints();
+
     Set<MavenDependencyInternal> getApiDependencies();
 
     Set<MavenDependencyInternal> getRuntimeDependencies();
+
+    Set<MavenDependencyInternal> getOptionalDependencies();
 
     MavenNormalizedPublication asNormalisedPublication();
 
@@ -63,5 +68,9 @@ public interface MavenPublicationInternal extends MavenPublication, PublicationI
      * This method enables this behaviour for the current publication.
      */
     void publishWithOriginalFileName();
+
+    VersionMappingStrategyInternal getVersionMappingStrategy();
+
+    boolean writeGradleMetadataMarker();
 }
 

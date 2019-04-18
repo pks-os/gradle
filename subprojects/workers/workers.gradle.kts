@@ -1,14 +1,14 @@
 import org.gradle.gradlebuild.unittestandcompile.ModuleType
 
 plugins {
-    id("gradlebuild.classycle")
+    gradlebuild.classycle
 }
 
 dependencies {
     compile(project(":core"))
-    compile(library("jcip"))
 
     integTestCompile(project(":internalIntegTesting"))
+    testFixturesApi(project(":internalTesting"))
 }
 
 gradlebuildJava {

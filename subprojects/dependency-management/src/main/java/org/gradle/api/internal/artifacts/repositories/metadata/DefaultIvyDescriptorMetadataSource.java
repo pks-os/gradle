@@ -24,7 +24,7 @@ import org.gradle.api.internal.artifacts.repositories.resolver.ExternalResourceA
 import org.gradle.api.internal.artifacts.repositories.resolver.ResourcePattern;
 import org.gradle.api.internal.artifacts.repositories.resolver.VersionLister;
 import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
-import org.gradle.internal.component.external.model.MutableIvyModuleResolveMetadata;
+import org.gradle.internal.component.external.model.ivy.MutableIvyModuleResolveMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.resolve.result.BuildableModuleVersionListingResolveResult;
 import org.gradle.internal.resource.local.FileResourceRepository;
@@ -43,10 +43,13 @@ public class DefaultIvyDescriptorMetadataSource extends AbstractRepositoryMetada
         this.metaDataParser = metaDataParser;
     }
 
-    protected MutableIvyModuleResolveMetadata parseMetaDataFromResource(ModuleComponentIdentifier moduleComponentIdentifier, LocallyAvailableExternalResource cachedResource, ExternalResourceArtifactResolver artifactResolver, DescriptorParseContext context, String repoName) {
-        MutableIvyModuleResolveMetadata metaData = metaDataParser.parseMetaData(context, cachedResource);
-        checkMetadataConsistency(moduleComponentIdentifier, metaData);
-        return metaData;
+    protected MetaDataParser.ParseResult<MutableIvyModuleResolveMetadata> parseMetaDataFromResource(ModuleComponentIdentifier moduleComponentIdentifier, LocallyAvailableExternalResource cachedResource, ExternalResourceArtifactResolver artifactResolver, DescriptorParseContext context, String repoName) {
+        MetaDataParser.ParseResult<MutableIvyModuleResolveMetadata> parseResult = metaDataParser.parseMetaData(context, cachedResource);
+        MutableIvyModuleResolveMetadata metaData = parseResult.getResult();
+        if (metaData != null) {
+            checkMetadataConsistency(moduleComponentIdentifier, metaData);
+        }
+        return parseResult;
     }
 
     @Override

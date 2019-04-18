@@ -18,18 +18,15 @@ import accessors.*
 
 plugins {
     `javascript-base`
-    id("gradlebuild.classycle")
+    gradlebuild.classycle
 }
 
 val reports by configurations.creating
 val flamegraph by configurations.creating
-configurations.compileOnly.extendsFrom(flamegraph)
+configurations.compileOnly { extendsFrom(flamegraph) }
 
 repositories {
     javaScript.googleApis()
-    repositories {
-        maven { url = uri("https://jitpack.io") }
-    }
 }
 
 dependencies {
@@ -45,37 +42,32 @@ dependencies {
     compile(library("commons_httpclient"))
     compile(library("jsch"))
     compile(library("commons_math"))
-
-    flamegraph("com.github.oehme:jfr-flame-graph:v0.0.10:all")
+    compile(library("jcl_to_slf4j"))
+    compile("org.openjdk.jmc:flightrecorder:7.0.0-SNAPSHOT")
+    compile("org.gradle.ci.health:tagging:0.63")
 
     runtime("com.h2database:h2:1.4.192")
 }
 
 gradlebuildJava {
-    moduleType = ModuleType.INTERNAL
+    moduleType = ModuleType.REQUIRES_JAVA_8
 }
 
 val generatedResourcesDir = gradlebuildJava.generatedResourcesDir
 
-val reportResources by tasks.creating(Copy::class) {
+val reportResources = tasks.register<Copy>("reportResources") {
     from(reports)
     into("$generatedResourcesDir/org/gradle/reporting")
 }
 
-java.sourceSets["main"].output.dir(mapOf("builtBy" to reportResources), generatedResourcesDir)
+java.sourceSets.main { output.dir(mapOf("builtBy" to reportResources), generatedResourcesDir) }
 
-tasks {
-    "jar"(Jar::class) {
-        inputs.files(flamegraph)
-        from(files(deferred{ flamegraph.map { zipTree(it) } }))
-    }
+tasks.jar {
+    inputs.files(flamegraph)
+    from(files(deferred{ flamegraph.map { zipTree(it) } }))
 }
 
 testFixtures {
     from(":core", "main")
     from(":toolingApi", "main")
-}
-
-ideConfiguration {
-    makeAllSourceDirsTestSourceDirsToWorkaroundIssuesWithIDEA13()
 }

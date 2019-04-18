@@ -31,6 +31,7 @@ class IncrementalTestIntegrationTest extends MultiVersionIntegrationSpec {
 
     def setup() {
         executer.noExtraLogging()
+        executer.withRepositoryMirrors()
     }
 
     def doesNotRunStaleTests() {
@@ -52,7 +53,7 @@ class IncrementalTestIntegrationTest extends MultiVersionIntegrationSpec {
         file('src/main/java/MainClass.java').assertIsFile().copyFrom(file('NewMainClass.java'))
 
         then:
-        succeeds('test').assertTasksNotSkipped(':compileJava', ':classes', ':compileTestJava', ':testClasses', ':test')
+        succeeds('test').assertTasksNotSkipped(':compileJava', ':classes', ':test')
         succeeds('test').assertTasksNotSkipped()
 
         when:
@@ -124,5 +125,29 @@ public class BarTest {
 
         then:
         result.assertTaskSkipped(":test")
+    }
+
+    def "does not re-run tests when parameter of disabled report changes"() {
+        buildFile << """
+            test {
+                reports.html {
+                    enabled = true
+                }
+                reports.junitXml {
+                    enabled = false
+                    outputPerTestCase = Boolean.parseBoolean(project.property('outputPerTestCase'))
+                }
+            }
+        """
+
+        when:
+        succeeds("test", "-PoutputPerTestCase=true")
+        then:
+        executedAndNotSkipped(":test")
+
+        when:
+        succeeds("test", "-PoutputPerTestCase=false")
+        then:
+        skipped(":test")
     }
 }

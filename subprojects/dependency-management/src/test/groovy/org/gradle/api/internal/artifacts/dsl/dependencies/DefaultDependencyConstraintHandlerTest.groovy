@@ -22,7 +22,7 @@ import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.DependencyConstraint
 import org.gradle.api.artifacts.DependencyConstraintSet
 import org.gradle.api.artifacts.VersionConstraint
-import org.gradle.api.internal.AsmBackedClassGenerator
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 class DefaultDependencyConstraintHandlerTest extends Specification {
@@ -35,7 +35,7 @@ class DefaultDependencyConstraintHandlerTest extends Specification {
     private def configuration = Mock(Configuration)
     private def dependencyConstraintSet = Mock(DependencyConstraintSet)
 
-    private DefaultDependencyConstraintHandler dependencyConstraintHandler = new AsmBackedClassGenerator().newInstance(DefaultDependencyConstraintHandler, configurationContainer, dependencyFactory)
+    private DefaultDependencyConstraintHandler dependencyConstraintHandler = TestUtil.instantiatorFactory().decorateLenient().newInstance(DefaultDependencyConstraintHandler, configurationContainer, dependencyFactory, TestUtil.objectInstantiator())
 
     void setup() {
         _ * configurationContainer.findByName(TEST_CONF_NAME) >> configuration

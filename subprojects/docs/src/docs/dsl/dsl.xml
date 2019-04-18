@@ -198,6 +198,9 @@
             <tr>
                 <td>org.gradle.api.resources.TextResourceFactory</td>
             </tr>
+            <tr>
+                <td>org.gradle.work.InputChanges</td>
+            </tr>
         </table>
     </section>
 
@@ -289,9 +292,12 @@
 
     <section>
         <title>Container types</title>
-        <para>Container types that handle various declarative elements (e.g. dependencies, configurations, artifacts, etc.):</para>
+        <para>Container types that handle various declarative elements (e.g. dependencies, configurations, artifacts, tasks, etc.):</para>
         <table>
             <title>Container types</title>
+            <tr>
+                <td>org.gradle.api.tasks.TaskContainer</td>
+            </tr>
             <tr>
                 <td>org.gradle.api.artifacts.ConfigurationContainer</td>
             </tr>
@@ -325,6 +331,9 @@
                 <td>org.gradle.api.credentials.AwsCredentials</td>
             </tr>
             <tr>
+                <td>org.gradle.api.credentials.HttpHeaderCredentials</td>
+            </tr>
+            <tr>
                 <td>org.gradle.api.artifacts.repositories.AuthenticationContainer</td>
             </tr>
             <tr>
@@ -332,6 +341,9 @@
             </tr>
             <tr>
                 <td>org.gradle.authentication.http.BasicAuthentication</td>
+            </tr>
+            <tr>
+                <td>org.gradle.authentication.http.HttpHeaderAuthentication</td>
             </tr>
             <tr>
                 <td>org.gradle.authentication.http.DigestAuthentication</td>
@@ -656,6 +668,23 @@
     </section>
 
     <section>
+        <title>Native tool chains model types</title>
+        <para>Used to configure tool chains for building C++ components.</para>
+        <table>
+            <title>Native tool chain types</title>
+            <tr>
+                <td>org.gradle.nativeplatform.toolchain.Gcc</td>
+            </tr>
+            <tr>
+                <td>org.gradle.nativeplatform.toolchain.Clang</td>
+            </tr>
+            <tr>
+                <td>org.gradle.nativeplatform.toolchain.VisualCpp</td>
+            </tr>
+        </table>
+    </section>
+
+    <section condition="noNavBar">
         <title>Native software model types</title>
         <para>Used to configure software components developed with native code.</para>
         <table>
@@ -721,15 +750,6 @@
                 <td>org.gradle.nativeplatform.Flavor</td>
             </tr>
             <tr>
-                <td>org.gradle.nativeplatform.toolchain.Gcc</td>
-            </tr>
-            <tr>
-                <td>org.gradle.nativeplatform.toolchain.Clang</td>
-            </tr>
-            <tr>
-                <td>org.gradle.nativeplatform.toolchain.VisualCpp</td>
-            </tr>
-            <tr>
                 <td>org.gradle.language.assembler.AssemblerSourceSet</td>
             </tr>
             <tr>
@@ -773,28 +793,14 @@
             </tr>
         </table>
     </section>
+
     <section>
-        <title>Native binary task types</title>
-        <para>Tasks used to build native binaries.</para>
+        <title>C++ binary task types</title>
+        <para>Tasks used to build C++ binaries.</para>
         <table>
-            <title>Native component task types</title>
+            <title>C++ component task types</title>
             <tr>
                 <td>org.gradle.language.cpp.tasks.CppCompile</td>
-            </tr>
-            <tr>
-                <td>org.gradle.language.c.tasks.CCompile</td>
-            </tr>
-            <tr>
-                <td>org.gradle.language.assembler.tasks.Assemble</td>
-            </tr>
-            <tr>
-                <td>org.gradle.language.objectivec.tasks.ObjectiveCCompile</td>
-            </tr>
-            <tr>
-                <td>org.gradle.language.objectivecpp.tasks.ObjectiveCppCompile</td>
-            </tr>
-            <tr>
-                <td>org.gradle.language.rc.tasks.WindowsResourceCompile</td>
             </tr>
             <tr>
                 <td>org.gradle.nativeplatform.tasks.LinkExecutable</td>
@@ -810,6 +816,29 @@
             </tr>
             <tr>
                 <td>org.gradle.nativeplatform.test.tasks.RunTestExecutable</td>
+            </tr>
+        </table>
+    </section>
+
+    <section condition="noNavBar">
+        <title>Native binary task types</title>
+        <para>Tasks used to build native binaries.</para>
+        <table>
+            <title>Native component task types</title>
+            <tr>
+                <td>org.gradle.language.c.tasks.CCompile</td>
+            </tr>
+            <tr>
+                <td>org.gradle.language.assembler.tasks.Assemble</td>
+            </tr>
+            <tr>
+                <td>org.gradle.language.objectivec.tasks.ObjectiveCCompile</td>
+            </tr>
+            <tr>
+                <td>org.gradle.language.objectivecpp.tasks.ObjectiveCppCompile</td>
+            </tr>
+            <tr>
+                <td>org.gradle.language.rc.tasks.WindowsResourceCompile</td>
             </tr>
         </table>
     </section>

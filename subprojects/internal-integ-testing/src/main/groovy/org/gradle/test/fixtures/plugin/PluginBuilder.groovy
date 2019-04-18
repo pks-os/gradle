@@ -94,8 +94,8 @@ class PluginBuilder {
 
         // The implementation jar module.
         def module = mavenRepo.module(group, artifact, version)
-        def artifactFile = module.getArtifactFile()
         def pluginModule = module.publish()
+        def artifactFile = module.getArtifactFile()
 
         def markerModules = new ArrayList<Module>()
 
@@ -182,7 +182,7 @@ class PluginBuilder {
         this
     }
 
-    PluginBuilder addNonConstructablePlugin(String id = "test-plugin", String className = "TestPlugin") {
+    PluginBuilder addNonConstructiblePlugin(String id = "test-plugin", String className = "TestPlugin") {
         addPluginSource(id, className, """
             package $packageName
 

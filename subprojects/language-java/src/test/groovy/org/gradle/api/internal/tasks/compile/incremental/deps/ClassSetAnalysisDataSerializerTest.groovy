@@ -19,25 +19,24 @@ package org.gradle.api.internal.tasks.compile.incremental.deps
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import it.unimi.dsi.fastutil.ints.IntSet
 import it.unimi.dsi.fastutil.ints.IntSets
+import org.gradle.api.internal.cache.StringInterner
 import org.gradle.internal.serialize.InputStreamBackedDecoder
 import org.gradle.internal.serialize.OutputStreamBackedEncoder
 import spock.lang.Specification
 import spock.lang.Subject
 
 import static org.gradle.api.internal.tasks.compile.incremental.deps.DependentsSet.dependencyToAll
-import static org.gradle.api.internal.tasks.compile.incremental.deps.DependentsSet.dependents
+import static org.gradle.api.internal.tasks.compile.incremental.deps.DependentsSet.dependentClasses
 
 class ClassSetAnalysisDataSerializerTest extends Specification {
 
-    @Subject serializer = new ClassSetAnalysisData.Serializer()
+    @Subject serializer = new ClassSetAnalysisData.Serializer(new StringInterner())
 
     def "serializes"() {
-        def data = new ClassSetAnalysisData(
-            ["A.class": "A", "B.class": "B"],
-            ["A": dependents("B", "C"), "B": dependents("C"), "C": dependents(), "D": dependencyToAll(),],
+        def data = new ClassSetAnalysisData(["A", "B", "C", "D"] as Set,
+            ["A": dependentClasses("B", "C"), "B": dependentClasses("C"), "C": dependentClasses(), "D": dependencyToAll(),],
             [C: new IntOpenHashSet([1, 2]) as IntSet, D: IntSets.EMPTY_SET]
-            ,
-            ['A': ['SA'] as Set, B: ['SB1', 'SB2'] as Set], dependents("Aggregated"), dependents("Aggregate"), "Because"
+            ,"Because"
         )
         def os = new ByteArrayOutputStream()
         def e = new OutputStreamBackedEncoder(os)
@@ -55,13 +54,7 @@ class ClassSetAnalysisDataSerializerTest extends Specification {
         }
 
         read.dependents["D"].dependencyToAll
-        read.dependentsOnAll.dependentClasses == ["Aggregate"] as Set
-        !read.dependentsOnAll.dependencyToAll
-        read.aggregatedTypes.dependentClasses == ["Aggregated"] as Set
-        !read.aggregatedTypes.dependencyToAll
-        read.filePathToClassName == ["A.class": "A", "B.class": "B"]
         read.classesToConstants == [C: [1,2] as Set, D: [] as Set]
-        read.classesToChildren == ['A': ['SA'] as Set, B: ['SB1', 'SB2'] as Set]
         read.fullRebuildCause == "Because"
     }
 }

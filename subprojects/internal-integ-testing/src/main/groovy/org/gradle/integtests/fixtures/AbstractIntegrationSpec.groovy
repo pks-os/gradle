@@ -15,6 +15,8 @@
  */
 package org.gradle.integtests.fixtures
 
+import groovy.transform.CompileStatic
+import groovy.transform.TypeCheckingMode
 import org.gradle.api.Action
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.build.BuildTestFixture
@@ -27,9 +29,12 @@ import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
+import org.gradle.test.fixtures.dsl.GradleDsl
 import org.gradle.test.fixtures.file.CleanupTestDirectory
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.test.fixtures.file.TestWorkspaceBuilder
 import org.gradle.test.fixtures.ivy.IvyFileRepository
 import org.gradle.test.fixtures.maven.M2Installation
 import org.gradle.test.fixtures.maven.MavenFileRepository
@@ -39,6 +44,8 @@ import org.hamcrest.CoreMatchers
 import org.hamcrest.Matcher
 import org.junit.Rule
 
+import static org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout.DEFAULT_TIMEOUT_SECONDS
+import static org.gradle.test.fixtures.dsl.GradleDsl.GROOVY
 import static org.gradle.util.Matchers.normalizedLineSeparators
 
 /**
@@ -48,6 +55,7 @@ import static org.gradle.util.Matchers.normalizedLineSeparators
  */
 @CleanupTestDirectory
 @SuppressWarnings("IntegrationTestFixtures")
+@IntegrationTestTimeout(DEFAULT_TIMEOUT_SECONDS)
 class AbstractIntegrationSpec extends Specification {
 
     @Rule
@@ -69,6 +77,15 @@ class AbstractIntegrationSpec extends Specification {
     private MavenFileRepository mavenRepo
     private IvyFileRepository ivyRepo
 
+    protected int maxHttpRetries = 1
+
+    def setup() {
+        m2.isolateMavenLocalRepo(executer)
+        executer.beforeExecute {
+            executer.withArgument("-Dorg.gradle.internal.repository.max.tentatives=$maxHttpRetries")
+        }
+    }
+
     def cleanup() {
         executer.cleanup()
     }
@@ -77,7 +94,7 @@ class AbstractIntegrationSpec extends Specification {
         new GradleContextualExecuter(distribution, temporaryFolder, getBuildContext())
     }
 
-    protected TestFile getBuildFile() {
+    TestFile getBuildFile() {
         testDirectory.file(getDefaultBuildFileName())
     }
 
@@ -90,10 +107,17 @@ class AbstractIntegrationSpec extends Specification {
         buildFile
     }
 
+    @CompileStatic
     protected TestFile getSettingsFile() {
         testDirectory.file('settings.gradle')
     }
 
+    @CompileStatic
+    protected TestFile getSettingsKotlinFile() {
+        testDirectory.file('settings.gradle.kts')
+    }
+
+    @CompileStatic
     protected TestFile getPropertiesFile() {
         testDirectory.file('gradle.properties')
     }
@@ -137,6 +161,22 @@ class AbstractIntegrationSpec extends Specification {
         file("build/classes/", language, sourceSet, fqcn)
     }
 
+    TestFile javaGeneratedSourceFile(String fqcn) {
+        generatedSourceFile("java", "main", fqcn)
+    }
+
+    TestFile groovyGeneratedSourceFile(String fqcn) {
+        generatedSourceFile("groovy", "main", fqcn)
+    }
+
+    TestFile scalaGeneratedSourceFile(String fqcn) {
+        generatedSourceFile("scala", "main", fqcn)
+    }
+
+    TestFile generatedSourceFile(String language, String sourceSet, String fqcn) {
+        file("build/generated/sources/annotationProcessor/", language, sourceSet, fqcn)
+    }
+
     protected GradleExecuter sample(Sample sample) {
         inDirectory(sample.dir)
     }
@@ -171,6 +211,7 @@ class AbstractIntegrationSpec extends Specification {
     /**
      * Synonym for succeeds()
      */
+    @CompileStatic(TypeCheckingMode.SKIP)
     protected ExecutionResult run(String... tasks) {
         succeeds(*tasks)
     }
@@ -277,6 +318,11 @@ class AbstractIntegrationSpec extends Specification {
         }
     }
 
+    AbstractIntegrationSpec withMaxHttpRetryCount(int count) {
+        maxHttpRetries = count
+        this
+    }
+
     def jarWithClasses(Map<String, String> javaSourceFiles, TestFile jarFile) {
         def builder = artifactBuilder()
         for (Map.Entry<String, String> entry : javaSourceFiles.entrySet()) {
@@ -345,7 +391,7 @@ class AbstractIntegrationSpec extends Specification {
         return zip
     }
 
-    def createDir(String name, Closure cl) {
+    def createDir(String name, @DelegatesTo(value = TestWorkspaceBuilder.class, strategy = Closure.DELEGATE_FIRST) Closure cl) {
         TestFile root = file(name)
         root.create(cl)
     }
@@ -389,8 +435,8 @@ class AbstractIntegrationSpec extends Specification {
         result.assertNotOutput(string.trim())
     }
 
-    static String jcenterRepository() {
-        RepoScriptBlockUtil.jcenterRepository()
+    static String jcenterRepository(GradleDsl dsl = GROOVY) {
+        RepoScriptBlockUtil.jcenterRepository(dsl)
     }
 
     static String mavenCentralRepository() {

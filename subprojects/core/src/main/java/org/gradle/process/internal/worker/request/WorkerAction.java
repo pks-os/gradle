@@ -17,14 +17,16 @@
 package org.gradle.process.internal.worker.request;
 
 import org.gradle.api.Action;
-import org.gradle.api.internal.AsmBackedClassGenerator;
-import org.gradle.api.internal.DefaultInstantiatorFactory;
-import org.gradle.api.internal.InstantiatorFactory;
-import org.gradle.cache.internal.CrossBuildInMemoryCacheFactory;
+import org.gradle.cache.internal.DefaultCrossBuildInMemoryCacheFactory;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.concurrent.Stoppable;
+import org.gradle.internal.dispatch.StreamCompletion;
 import org.gradle.internal.event.DefaultListenerManager;
-import org.gradle.internal.operations.CurrentBuildOperationRef;
+import org.gradle.internal.instantiation.DefaultInstantiatorFactory;
+import org.gradle.internal.instantiation.InjectAnnotationHandler;
+import org.gradle.internal.instantiation.InstantiatorFactory;
 import org.gradle.internal.operations.BuildOperationRef;
+import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.internal.remote.ObjectConnection;
 import org.gradle.internal.remote.internal.hub.StreamFailureHandler;
 import org.gradle.process.internal.worker.WorkerProcessContext;
@@ -32,9 +34,10 @@ import org.gradle.process.internal.worker.WorkerProcessContext;
 import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 
-public class WorkerAction implements Action<WorkerProcessContext>, Serializable, RequestProtocol, StreamFailureHandler {
+public class WorkerAction implements Action<WorkerProcessContext>, Serializable, RequestProtocol, StreamFailureHandler, Stoppable, StreamCompletion {
     private final String workerImplementationName;
     private transient CountDownLatch completed;
     private transient ResponseProtocol responder;
@@ -52,7 +55,7 @@ public class WorkerAction implements Action<WorkerProcessContext>, Serializable,
         completed = new CountDownLatch(1);
         try {
             if (instantiatorFactory == null) {
-                instantiatorFactory = new DefaultInstantiatorFactory(new AsmBackedClassGenerator(), new CrossBuildInMemoryCacheFactory(new DefaultListenerManager()));
+                instantiatorFactory = new DefaultInstantiatorFactory(new DefaultCrossBuildInMemoryCacheFactory(new DefaultListenerManager()), Collections.<InjectAnnotationHandler>emptyList());
             }
             workerImplementation = Class.forName(workerImplementationName);
             implementation = instantiatorFactory.inject(workerProcessContext.getServiceRegistry()).newInstance(workerImplementation);
@@ -76,6 +79,13 @@ public class WorkerAction implements Action<WorkerProcessContext>, Serializable,
     public void stop() {
         completed.countDown();
         CurrentBuildOperationRef.instance().clear();
+    }
+
+    @Override
+    public void endStream() {
+        // This happens when the connection between the worker and the build daemon is closed for some reason,
+        // possibly because the build daemon died unexpectedly.
+        stop();
     }
 
     @Override

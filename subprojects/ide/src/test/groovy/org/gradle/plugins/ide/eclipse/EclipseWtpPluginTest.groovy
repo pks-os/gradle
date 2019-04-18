@@ -53,8 +53,8 @@ class EclipseWtpPluginTest extends AbstractProjectBuilderSpec {
         wtpPlugin.apply(project)
 
         then:
-        project.tasks.eclipse.dependsOn*.get().contains(project.eclipseWtp)
-        project.tasks.cleanEclipse.dependsOn*.get().contains(project.cleanEclipseWtp)
+        project.tasks.eclipse.taskDependencies.getDependencies(null).contains(project.eclipseWtp)
+        project.tasks.cleanEclipse.taskDependencies.getDependencies(null).contains(project.cleanEclipseWtp)
     }
 
     def applyToJavaProject_shouldHaveWebProjectAndClasspathTask() {
@@ -316,7 +316,7 @@ class EclipseWtpPluginTest extends AbstractProjectBuilderSpec {
         def wtp = checkAndGetEclipseWtpComponent()
         assert wtp.sourceDirs == project.sourceSets.main.allSource.srcDirs
         assert wtp.rootConfigurations == [] as Set
-        assert wtp.libConfigurations == [project.configurations.runtime] as Set
+        assert wtp.libConfigurations == [project.configurations.runtimeClasspath] as Set
         assert wtp.minusConfigurations == [] as Set
         assert wtp.deployName == project.name
         assert wtp.contextPath == null
@@ -329,7 +329,7 @@ class EclipseWtpPluginTest extends AbstractProjectBuilderSpec {
         def wtp = checkAndGetEclipseWtpComponent()
         assert wtp.sourceDirs == project.sourceSets.main.allSource.srcDirs
         assert wtp.rootConfigurations == [] as Set
-        assert wtp.libConfigurations == [project.configurations.runtime] as Set
+        assert wtp.libConfigurations == [project.configurations.runtimeClasspath] as Set
         assert wtp.minusConfigurations == [project.configurations.providedRuntime] as Set
         assert wtp.deployName == project.name
         assert wtp.contextPath == project.war.baseName

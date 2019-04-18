@@ -20,8 +20,10 @@ import org.codehaus.plexus.util.xml.pull.XmlPullParserException
 import org.gradle.api.Action
 import org.gradle.api.XmlProvider
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+import org.gradle.api.internal.attributes.ImmutableAttributes
 import org.gradle.api.internal.provider.Providers
 import org.gradle.api.publication.maven.internal.VersionRangeMapper
+import org.gradle.api.publish.internal.versionmapping.VersionMappingStrategyInternal
 import org.gradle.api.publish.maven.InvalidMavenPublicationException
 import org.gradle.api.publish.maven.MavenArtifact
 import org.gradle.api.publish.maven.internal.tasks.MavenPomFileGenerator
@@ -42,16 +44,20 @@ class ValidatingMavenPublisherTest extends Specification {
     def publisher = new ValidatingMavenPublisher(delegate)
     def repository = Mock(MavenArtifactRepository)
 
+    @Unroll
     def "delegates when publication is valid"() {
         when:
         def projectIdentity = makeProjectIdentity("the-group", "the-artifact", "the-version")
-        def publication = new MavenNormalizedPublication("pub-name", "pom", createPomFile(projectIdentity), projectIdentity, emptySet(), null)
+        def publication = new MavenNormalizedPublication("pub-name", "pom", createPomFile(projectIdentity, null, marker), projectIdentity, emptySet(), null)
 
         and:
         publisher.publish(publication, repository)
 
         then:
         delegate.publish(publication, repository)
+
+        where:
+        marker << [false, true]
     }
 
     def "validates project coordinates"() {
@@ -226,10 +232,10 @@ class ValidatingMavenPublisherTest extends Specification {
         }
     }
 
-    private def createPomFile(MavenProjectIdentity projectIdentity, Action<XmlProvider> withXmlAction = null) {
+    private def createPomFile(MavenProjectIdentity projectIdentity, Action<XmlProvider> withXmlAction = null, boolean marker = false) {
         def pomFile = testDir.file("pom")
         def mapper = Stub(VersionRangeMapper)
-        MavenPomFileGenerator pomFileGenerator = new MavenPomFileGenerator(projectIdentity, mapper)
+        MavenPomFileGenerator pomFileGenerator = new MavenPomFileGenerator(projectIdentity, mapper, Stub(VersionMappingStrategyInternal), ImmutableAttributes.EMPTY, ImmutableAttributes.EMPTY, marker)
         if (withXmlAction != null) {
             pomFileGenerator.withXml(withXmlAction)
         }

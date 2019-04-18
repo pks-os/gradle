@@ -20,15 +20,16 @@ import org.gradle.api.Action
 import org.gradle.api.Task
 import org.gradle.api.file.FileCopyDetails
 import org.gradle.api.file.RelativePath
-import org.gradle.api.internal.ConventionMapping
+import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectPublicationRegistry
 import org.gradle.api.internal.plugins.PluginDescriptor
 import org.gradle.api.plugins.JavaPlugin
-import org.gradle.api.tasks.bundling.Jar
 import org.gradle.internal.logging.ConfigureLogging
 import org.gradle.internal.logging.events.LogEvent
 import org.gradle.internal.logging.events.OutputEvent
 import org.gradle.internal.logging.events.OutputEventListener
 import org.gradle.plugin.devel.PluginDeclaration
+import org.gradle.plugin.use.internal.DefaultPluginId
+import org.gradle.plugin.use.resolve.internal.local.PluginPublication
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.junit.Rule
 
@@ -80,7 +81,7 @@ class JavaGradlePluginPluginTest extends AbstractProjectBuilderSpec {
         classList.contains('com/xxx/TestPlugin.class')
     }
 
-    def "PluginValidationAction finds fully qualified class"(List classList, String fqClass, boolean expectedValue) {
+    def "PluginValidationAction finds fully qualified class"() {
         setup:
         Action<Task> pluginValidationAction = new JavaGradlePluginPlugin.PluginValidationAction([], [], classList as Set<String>)
 
@@ -175,31 +176,6 @@ class JavaGradlePluginPluginTest extends AbstractProjectBuilderSpec {
         }
     }
 
-    def "apply configures filesMatching actions on jar spec"() {
-        setup:
-        project.pluginManager.apply(JavaPlugin)
-        def Jar mockJarTask = mockJar(project)
-
-        when:
-        project.pluginManager.apply(JavaGradlePluginPlugin)
-
-        then:
-        1 * mockJarTask.filesMatching(JavaGradlePluginPlugin.PLUGIN_DESCRIPTOR_PATTERN, { it instanceof JavaGradlePluginPlugin.PluginDescriptorCollectorAction })
-        1 * mockJarTask.filesMatching(JavaGradlePluginPlugin.CLASSES_PATTERN, { it instanceof JavaGradlePluginPlugin.ClassManifestCollectorAction })
-    }
-
-    def "apply configures doLast action on jar"() {
-        setup:
-        project.pluginManager.apply(JavaPlugin)
-        def Jar mockJarTask = mockJar(project)
-
-        when:
-        project.pluginManager.apply(JavaGradlePluginPlugin)
-
-        then:
-        1 * mockJarTask.appendParallelSafeAction({ it instanceof JavaGradlePluginPlugin.PluginValidationAction })
-    }
-
     def "creates tasks with group and description"() {
         when:
         project.pluginManager.apply(JavaGradlePluginPlugin)
@@ -218,14 +194,21 @@ class JavaGradlePluginPluginTest extends AbstractProjectBuilderSpec {
         validateTaskProperties.description == JavaGradlePluginPlugin.VALIDATE_TASK_PROPERTIES_TASK_DESCRIPTION
     }
 
-    def Jar mockJar(project) {
-        def Jar mockJar = Mock(Jar) {
-            _ * getName() >> { JavaGradlePluginPlugin.JAR_TASK }
-            _ * getConventionMapping() >> { Stub(ConventionMapping) }
+    def "registers local publication for each plugin"() {
+        when:
+        project.pluginManager.apply(JavaGradlePluginPlugin)
+        project.gradlePlugin {
+            plugins {
+                a { id = "a.plugin" }
+                b { id = "b.plugin" }
+            }
         }
-        project.tasks.remove(project.tasks.getByName(JavaGradlePluginPlugin.JAR_TASK))
-        project.tasks.add(mockJar)
-        return mockJar
+
+        then:
+        def publications = project.services.get(ProjectPublicationRegistry).getPublications(PluginPublication, project.identityPath)
+        publications.size() == 2
+        publications[0].pluginId == DefaultPluginId.of("a.plugin")
+        publications[1].pluginId == DefaultPluginId.of("b.plugin")
     }
 
     static class ResettableOutputEventListener implements OutputEventListener {

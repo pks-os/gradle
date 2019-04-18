@@ -17,11 +17,11 @@
 package org.gradle.api.tasks.diagnostics.internal.insight
 
 import org.gradle.api.artifacts.result.ComponentSelectionReason
-import org.gradle.api.internal.artifacts.dependencies.DefaultMutableVersionConstraint
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.DefaultVersionComparator
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.DefaultVersionSelectorScheme
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons
 import org.gradle.api.internal.artifacts.result.DefaultResolvedComponentResult
 import org.gradle.api.internal.artifacts.result.DefaultResolvedDependencyResult
 import org.gradle.api.internal.artifacts.result.DefaultResolvedVariantResult
@@ -34,8 +34,8 @@ import spock.lang.Specification
 import spock.lang.Subject
 
 import static org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier.newId
-import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons.CONFLICT_RESOLUTION
-import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons.FORCED
+import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons.CONFLICT_RESOLUTION
+import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons.FORCED
 import static org.gradle.internal.component.external.model.DefaultModuleComponentSelector.newSelector
 
 class DependencyInsightReporterSpec extends Specification {
@@ -115,7 +115,7 @@ class DependencyInsightReporterSpec extends Specification {
         sorted.size() == 5
 
         sorted[0].name == 'a:x:2.0'
-        sorted[0].description == 'conflict resolution'
+        sorted[0].description == 'by conflict resolution'
 
         sorted[1].name == 'a:x:2.0'
         sorted[1].description == null
@@ -132,9 +132,9 @@ class DependencyInsightReporterSpec extends Specification {
 
     def "can limit to a single path to a dependency"() {
         def dependencies = [
-                path('a:1.0 -> b:1.0 -> c:1.0'),
-                path('a:1.0 -> d:1.0'),
-                path('a:1.0 -> e:1.0 -> f:1.0')
+            path('a:1.0 -> b:1.0 -> c:1.0'),
+            path('a:1.0 -> d:1.0'),
+            path('a:1.0 -> e:1.0 -> f:1.0')
         ]
 
         when:
@@ -143,12 +143,12 @@ class DependencyInsightReporterSpec extends Specification {
         then:
         sorted.size() == 2
         verify(sorted[0]) {
-            selected'group:a:1.0'
+            selected 'group:a:1.0'
             isHeader()
             noMoreChildren()
         }
         verify(sorted[1]) {
-            selected'group:a:1.0'
+            selected 'group:a:1.0'
             isNotHeader()
             hasChild('group:b:1.0') {
                 noMoreChildren()
@@ -168,12 +168,12 @@ class DependencyInsightReporterSpec extends Specification {
         then:
         sorted.size() == 2
         verify(sorted[0]) {
-            selected'group:a:1.0'
+            selected 'group:a:1.0'
             isHeader()
             noMoreChildren()
         }
         verify(sorted[1]) {
-            selected'group:a:1.0'
+            selected 'group:a:1.0'
             isNotHeader()
             hasChild('group:b:1.0') {
                 noMoreChildren()
@@ -183,29 +183,30 @@ class DependencyInsightReporterSpec extends Specification {
         }
     }
 
-    private static void verify(RenderableDependency result, @DelegatesTo(value=RenderableDependencyResultFixture, strategy = Closure.DELEGATE_FIRST) Closure<?> spec) {
+    private static void verify(RenderableDependency result, @DelegatesTo(value = RenderableDependencyResultFixture, strategy = Closure.DELEGATE_FIRST) Closure<?> spec) {
         spec.delegate = new RenderableDependencyResultFixture(result)
         spec.resolveStrategy = Closure.DELEGATE_FIRST
         spec()
     }
 
-    private DefaultResolvedDependencyResult dep(String group, String name, String requested, String selected = requested, ComponentSelectionReason selectionReason = VersionSelectionReasons.requested()) {
-        def selectedModule = new DefaultResolvedComponentResult(newId(group, name, selected), selectionReason, new DefaultModuleComponentIdentifier(group, name, selected), defaultVariant())
-        new DefaultResolvedDependencyResult(newSelector(group, name, new DefaultMutableVersionConstraint(requested)),
+    private static DefaultResolvedDependencyResult dep(String group, String name, String requested, String selected = requested, ComponentSelectionReason selectionReason = ComponentSelectionReasons.requested()) {
+        def selectedModule = new DefaultResolvedComponentResult(newId(group, name, selected), selectionReason, new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId(group, name), selected), [defaultVariant()], "repoId")
+        new DefaultResolvedDependencyResult(newSelector(DefaultModuleIdentifier.newId(group, name), requested),
+                false,
                 selectedModule,
-                new DefaultResolvedComponentResult(newId("a", "root", "1"), VersionSelectionReasons.requested(), new DefaultModuleComponentIdentifier(group, name, selected), defaultVariant()))
+                new DefaultResolvedComponentResult(newId("a", "root", "1"), ComponentSelectionReasons.requested(), new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId(group, name), selected), [defaultVariant()], "repoId"))
     }
 
-    private DefaultResolvedVariantResult defaultVariant() {
-        new DefaultResolvedVariantResult(Describables.of("default"), ImmutableAttributes.EMPTY)
+    private static DefaultResolvedVariantResult defaultVariant() {
+        new DefaultResolvedVariantResult(Describables.of("default"), ImmutableAttributes.EMPTY, [])
     }
 
-    private DefaultResolvedDependencyResult path(String path) {
-        DefaultResolvedComponentResult from = new DefaultResolvedComponentResult(newId("group", "root", "1"), VersionSelectionReasons.requested(), new DefaultModuleComponentIdentifier("group", "root", "1"), defaultVariant())
+    private static DefaultResolvedDependencyResult path(String path) {
+        DefaultResolvedComponentResult from = new DefaultResolvedComponentResult(newId("group", "root", "1"), ComponentSelectionReasons.requested(), new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId("group", "root"), "1"), [defaultVariant()], "repoId")
         List<DefaultResolvedDependencyResult> pathElements = (path.split(' -> ') as List).reverse().collect {
             def (name, version) = it.split(':')
-            def componentResult = new DefaultResolvedComponentResult(newId('group', name, version), VersionSelectionReasons.requested(), DefaultModuleComponentIdentifier.newId('group', name, version), defaultVariant())
-            def result = new DefaultResolvedDependencyResult(newSelector("group", name, version), componentResult, from)
+            def componentResult = new DefaultResolvedComponentResult(newId('group', name, version), ComponentSelectionReasons.requested(), DefaultModuleComponentIdentifier.newId(DefaultModuleIdentifier.newId('group', name), version), [defaultVariant()], "repoId")
+            def result = new DefaultResolvedDependencyResult(newSelector(DefaultModuleIdentifier.newId("group", name), version), false, componentResult, from)
             from = componentResult
             result
         }
@@ -213,11 +214,11 @@ class DependencyInsightReporterSpec extends Specification {
     }
 
     private static ComponentSelectionReason forced() {
-        VersionSelectionReasons.of([FORCED])
+        ComponentSelectionReasons.of(FORCED)
     }
 
     private static ComponentSelectionReason conflict() {
-        VersionSelectionReasons.of([CONFLICT_RESOLUTION])
+        ComponentSelectionReasons.of(CONFLICT_RESOLUTION)
     }
 
     private static class RenderableDependencyResultFixture {
@@ -242,7 +243,7 @@ class DependencyInsightReporterSpec extends Specification {
 
         void hasChild(String name, Closure<?> spec) {
             def child = actual.children.find { it.name == name }
-            assert child != null : "Unable to find child named $name. Known children to ${actual.name} = ${actual.children.name}"
+            assert child != null: "Unable to find child named $name. Known children to ${actual.name} = ${actual.children.name}"
             checkedChildren << child
             verify(child, spec)
         }

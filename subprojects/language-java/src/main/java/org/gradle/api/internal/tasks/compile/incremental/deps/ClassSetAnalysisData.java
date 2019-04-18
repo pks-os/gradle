@@ -18,56 +18,57 @@ package org.gradle.api.internal.tasks.compile.incremental.deps;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.ints.IntSets;
+import org.apache.commons.lang.StringUtils;
+import org.gradle.api.internal.cache.StringInterner;
 import org.gradle.internal.serialize.AbstractSerializer;
 import org.gradle.internal.serialize.Decoder;
 import org.gradle.internal.serialize.Encoder;
 import org.gradle.internal.serialize.IntSetSerializer;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
 public class ClassSetAnalysisData {
-    final Map<String, String> filePathToClassName;
-    final Map<String, DependentsSet> dependents;
-    final Map<String, IntSet> classesToConstants;
-    final Map<String, Set<String>> classesToChildren;
-    private final DependentsSet aggregatedTypes;
-    final DependentsSet dependentsOnAll;
-    final String fullRebuildCause;
+    public static final String PACKAGE_INFO = "package-info";
 
-    public ClassSetAnalysisData(Map<String, String> filePathToClassName, Map<String, DependentsSet> dependents, Map<String, IntSet> classesToConstants, Map<String, Set<String>> classesToChildren, DependentsSet aggregatedTypes, DependentsSet dependentsOnAll, String fullRebuildCause) {
-        this.filePathToClassName = filePathToClassName;
+    private final Set<String> classes;
+    private final Map<String, DependentsSet> dependents;
+    private final Map<String, IntSet> classesToConstants;
+    private final String fullRebuildCause;
+
+    public ClassSetAnalysisData(Set<String> classes, Map<String, DependentsSet> dependents, Map<String, IntSet> classesToConstants, String fullRebuildCause) {
+        this.classes = classes;
         this.dependents = dependents;
         this.classesToConstants = classesToConstants;
-        this.classesToChildren = classesToChildren;
-        this.aggregatedTypes = aggregatedTypes;
-        this.dependentsOnAll = dependentsOnAll;
         this.fullRebuildCause = fullRebuildCause;
-    }
-
-    public String getClassNameForFile(String filePath) {
-        return filePathToClassName.get(filePath);
     }
 
     public DependentsSet getDependents(String className) {
         if (fullRebuildCause != null) {
             return DependentsSet.dependencyToAll(fullRebuildCause);
         }
+        if (className.endsWith(PACKAGE_INFO)) {
+            String packageName = className.equals(PACKAGE_INFO) ? null : StringUtils.removeEnd(className, "." + PACKAGE_INFO);
+            return getDependentsOfPackage(packageName);
+        }
         DependentsSet dependentsSet = dependents.get(className);
-        return dependentsSet == null ? DependentsSet.empty(): dependentsSet;
+        return dependentsSet == null ? DependentsSet.empty() : dependentsSet;
     }
 
-    public DependentsSet getDependentsOnAll() {
-        return dependentsOnAll;
-    }
-
-    public DependentsSet getAggregatedTypes() {
-        return aggregatedTypes;
+    private DependentsSet getDependentsOfPackage(String packageName) {
+        Set<String> typesInPackage = Sets.newHashSet();
+        for (String type : classes) {
+            int i = type.lastIndexOf(".");
+            if (i < 0 && packageName == null || i > 0 && type.substring(0, i).equals(packageName)) {
+                typesInPackage.add(type);
+            }
+        }
+        return DependentsSet.dependentClasses(typesInPackage);
     }
 
     public IntSet getConstants(String className) {
@@ -78,24 +79,22 @@ public class ClassSetAnalysisData {
         return integers;
     }
 
-    public Set<String> getChildren(String className) {
-        Set<String> children = classesToChildren.get(className);
-        return children == null ? Collections.<String>emptySet() : children;
-    }
-
     public static class Serializer extends AbstractSerializer<ClassSetAnalysisData> {
+
+        private final StringInterner interner;
+
+        public Serializer(StringInterner interner) {
+            this.interner = interner;
+        }
 
         @Override
         public ClassSetAnalysisData read(Decoder decoder) throws Exception {
-            // Class names are de-duplicated when encoded
             Map<Integer, String> classNameMap = new HashMap<Integer, String>();
 
             int count = decoder.readSmallInt();
-            ImmutableMap.Builder<String, String> filePathToClassNameBuilder = ImmutableMap.builder();
+            ImmutableSet.Builder<String> classes = ImmutableSet.builder();
             for (int i = 0; i < count; i++) {
-                String filePath = decoder.readString();
-                String className = readClassName(decoder, classNameMap);
-                filePathToClassNameBuilder.put(filePath, className);
+                classes.add(readClassName(decoder, classNameMap));
             }
 
             count = decoder.readSmallInt();
@@ -114,37 +113,17 @@ public class ClassSetAnalysisData {
                 classesToConstantsBuilder.put(className, constants);
             }
 
-            count = decoder.readSmallInt();
-            ImmutableMap.Builder<String, Set<String>> classNameToChildren = ImmutableMap.builder();
-            for (int i = 0; i < count; i++) {
-                String parent = readClassName(decoder, classNameMap);
-                int nameCount = decoder.readSmallInt();
-                ImmutableSet.Builder<String> namesBuilder = ImmutableSet.builder();
-                for (int j = 0; j < nameCount; j++) {
-                    namesBuilder.add(readClassName(decoder, classNameMap));
-                }
-                classNameToChildren.put(parent, namesBuilder.build());
-            }
-
-            DependentsSet aggregatedTypes = readDependentsSet(decoder, classNameMap);
-
-            DependentsSet dependentsOnAll = readDependentsSet(decoder, classNameMap);
-
             String fullRebuildCause = decoder.readNullableString();
 
-            return new ClassSetAnalysisData(filePathToClassNameBuilder.build(), dependentsBuilder.build(), classesToConstantsBuilder.build(), classNameToChildren.build(), aggregatedTypes, dependentsOnAll, fullRebuildCause);
+            return new ClassSetAnalysisData(classes.build(), dependentsBuilder.build(), classesToConstantsBuilder.build(), fullRebuildCause);
         }
 
         @Override
         public void write(Encoder encoder, ClassSetAnalysisData value) throws Exception {
-            // Deduplicate class names when encoding.
-            // This would be more efficient with a better data structure in ClassSetAnalysisData
             Map<String, Integer> classNameMap = new HashMap<String, Integer>();
-
-            encoder.writeSmallInt(value.filePathToClassName.size());
-            for (Map.Entry<String, String> entry : value.filePathToClassName.entrySet()) {
-                encoder.writeString(entry.getKey());
-                writeClassName(entry.getValue(), classNameMap, encoder);
+            encoder.writeSmallInt(value.classes.size());
+            for (String clazz : value.classes) {
+                writeClassName(clazz, classNameMap, encoder);
             }
 
             encoder.writeSmallInt(value.dependents.size());
@@ -158,20 +137,6 @@ public class ClassSetAnalysisData {
                 writeClassName(entry.getKey(), classNameMap, encoder);
                 IntSetSerializer.INSTANCE.write(encoder, entry.getValue());
             }
-
-            encoder.writeSmallInt(value.classesToChildren.size());
-            for (Map.Entry<String, Set<String>> entry : value.classesToChildren.entrySet()) {
-                writeClassName(entry.getKey(), classNameMap, encoder);
-                encoder.writeSmallInt(entry.getValue().size());
-                for (String className : entry.getValue()) {
-                    writeClassName(className, classNameMap, encoder);
-                }
-            }
-
-            writeDependentSet(value.aggregatedTypes, classNameMap, encoder);
-
-            writeDependentSet(value.dependentsOnAll, classNameMap, encoder);
-
             encoder.writeNullableString(value.fullRebuildCause);
         }
 
@@ -185,7 +150,7 @@ public class ClassSetAnalysisData {
             for (int i = 0; i < count; i++) {
                 builder.add(readClassName(decoder, classNameMap));
             }
-            return DependentsSet.dependents(builder.build());
+            return DependentsSet.dependentClasses(builder.build());
         }
 
         private void writeDependentSet(DependentsSet dependentsSet, Map<String, Integer> classNameMap, Encoder encoder) throws IOException {
@@ -205,7 +170,7 @@ public class ClassSetAnalysisData {
             int id = decoder.readSmallInt();
             if (id == 0) {
                 id = decoder.readSmallInt();
-                String className = decoder.readString();
+                String className = interner.intern(decoder.readString());
                 classNameMap.put(id, className);
                 return className;
             }

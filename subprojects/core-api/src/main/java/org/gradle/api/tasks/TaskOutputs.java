@@ -28,26 +28,37 @@ import org.gradle.internal.HasInternalProtocol;
  * <p>You can obtain a {@code TaskOutputs} instance using {@link org.gradle.api.Task#getOutputs()}.</p>
  */
 @HasInternalProtocol
-public interface TaskOutputs extends CompatibilityAdapterForTaskOutputs {
+public interface TaskOutputs {
     /**
-     * <p>Adds a predicate to determine whether the outputs of this task are up-to-date. The given closure is executed
-     * at task execution time. The closure is passed the task as a parameter. If the closure returns false, the task
-     * outputs are considered out-of-date and the task will be executed.</p>
+     * <p>
+     *     Adds a predicate to determine whether previous outputs of this task can be reused.
+     *     The given closure is executed at task execution time.
+     *     The closure is passed the task as a parameter.
+     *     If the closure returns false, previous outputs of this task cannot be reused and the task will be executed.
+     *     That means the task is out-of-date and no outputs will be loaded from the build cache.
+     * </p>
      *
-     * <p>You can add multiple such predicates. The task outputs are considered out-of-date when any predicate returns
-     * false.<p>
+     * <p>
+     *     You can add multiple such predicates.
+     *     The task outputs cannot be reused when any predicate returns false.
+     * </p>
      *
      * @param upToDateClosure The closure to use to determine whether the task outputs are up-to-date.
      */
     void upToDateWhen(Closure upToDateClosure);
 
     /**
-     * <p>Adds a predicate to determine whether the outputs of this task are up-to-date. The given spec is evaluated at
-     * task execution time. If the spec returns false, the task outputs are considered out-of-date and the task will be
-     * executed.</p>
+     * <p>
+     *     Adds a predicate to determine whether previous outputs of this task can be reused.
+     *     The given spec is evaluated at task execution time.
+     *     If the spec returns false, previous outputs of this task cannot be reused and the task will be executed.
+     *     That means the task is out-of-date and no outputs will be loaded from the build cache.
+     * </p>
      *
-     * <p>You can add multiple such predicates. The task outputs are considered out-of-date when any predicate returns
-     * false.<p>
+     * <p>
+     *     You can add multiple such predicates.
+     *     The task outputs cannot be reused when any predicate returns false.
+     * </p>
      *
      * @param upToDateSpec The spec to use to determine whether the task outputs are up-to-date.
      */
@@ -61,7 +72,7 @@ public interface TaskOutputs extends CompatibilityAdapterForTaskOutputs {
      * or if any of the predicates passed to {@link #doNotCacheIf(String, Spec)} returns {@code true}. If {@code cacheIf()} is not specified,
      * the task will not be cached unless the {@literal @}{@link CacheableTask} annotation is present on the task type.</p>
      *
-     * <p>Consider using {@link #cacheIf(String, Spec)} instead for also providing a reason for disabling caching.</p>
+     * <p>Consider using {@link #cacheIf(String, Spec)} instead for also providing a reason for enabling caching.</p>
      *
      * @param spec specifies if the results of the task should be cached.
      *

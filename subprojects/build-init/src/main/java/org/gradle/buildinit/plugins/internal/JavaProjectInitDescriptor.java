@@ -16,16 +16,23 @@
 
 package org.gradle.buildinit.plugins.internal;
 
-import org.apache.commons.lang.StringUtils;
 import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.file.FileResolver;
-import org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl;
+import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework;
 
+import java.util.Arrays;
+import java.util.Set;
+import java.util.TreeSet;
+
+import static org.gradle.api.plugins.JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME;
+import static org.gradle.api.plugins.JavaPlugin.TEST_IMPLEMENTATION_CONFIGURATION_NAME;
+import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework.JUNIT;
+import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework.JUNITJUPITER;
 import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework.SPOCK;
 import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework.TESTNG;
 
-public abstract class JavaProjectInitDescriptor extends LanguageLibraryProjectInitDescriptor {
+public abstract class JavaProjectInitDescriptor extends JvmProjectInitDescriptor {
     private final static Description DESCRIPTION = new Description(
         "Java",
         "Java Quickstart",
@@ -34,30 +41,31 @@ public abstract class JavaProjectInitDescriptor extends LanguageLibraryProjectIn
     );
     private final DocumentationRegistry documentationRegistry;
 
-    public JavaProjectInitDescriptor(TemplateOperationFactory templateOperationFactory,
+    public JavaProjectInitDescriptor(BuildScriptBuilderFactory scriptBuilderFactory,
+                                     TemplateOperationFactory templateOperationFactory,
                                      FileResolver fileResolver,
                                      TemplateLibraryVersionProvider libraryVersionProvider,
-                                     ProjectInitDescriptor globalSettingsDescriptor,
                                      DocumentationRegistry documentationRegistry) {
-        super("java", templateOperationFactory, fileResolver, libraryVersionProvider, globalSettingsDescriptor);
+        super("java", scriptBuilderFactory, templateOperationFactory, fileResolver, libraryVersionProvider);
         this.documentationRegistry = documentationRegistry;
     }
 
     @Override
-    public void generate(BuildInitDsl dsl, BuildInitTestFramework testFramework) {
-        globalSettingsDescriptor.generate(dsl, testFramework);
+    protected void generate(InitSettings settings, BuildScriptBuilder buildScriptBuilder) {
+        super.generate(settings, buildScriptBuilder);
+
         Description desc = getDescription();
-        BuildScriptBuilder buildScriptBuilder = new BuildScriptBuilder(dsl, fileResolver, "build")
+        buildScriptBuilder
             .fileComment("This generated file contains a sample " + desc.projectType + " project to get you started.")
             .fileComment("For more details take a look at the " + desc.chapterName + " chapter in the Gradle")
-            .fileComment("user guide available at " + documentationRegistry.getDocumentationFor(desc.userguideId))
+            .fileComment("User Manual available at " + documentationRegistry.getDocumentationFor(desc.userguideId))
             .plugin("Apply the " + desc.pluginName + " plugin to add support for " + desc.projectType, desc.pluginName);
-        configureBuildScript(buildScriptBuilder);
-        addTestFramework(testFramework, buildScriptBuilder);
-        buildScriptBuilder.create().generate();
+        configureBuildScript(settings, buildScriptBuilder);
+        addTestFramework(settings.getTestFramework(), buildScriptBuilder);
 
-        TemplateOperation javaSourceTemplate = sourceTemplateOperation();
-        whenNoSourcesAvailable(javaSourceTemplate, testTemplateOperation(testFramework)).generate();
+        TemplateOperation sourceTemplate = sourceTemplateOperation(settings);
+        TemplateOperation testSourceTemplate = testTemplateOperation(settings);
+        whenNoSourcesAvailable(sourceTemplate, testSourceTemplate).generate();
     }
 
     protected Description getDescription() {
@@ -65,11 +73,11 @@ public abstract class JavaProjectInitDescriptor extends LanguageLibraryProjectIn
     }
 
     protected String getImplementationConfigurationName() {
-        return "compile";
+        return IMPLEMENTATION_CONFIGURATION_NAME;
     }
 
     protected String getTestImplementationConfigurationName() {
-        return "test" + StringUtils.capitalize(getImplementationConfigurationName());
+        return TEST_IMPLEMENTATION_CONFIGURATION_NAME;
     }
 
     private void addTestFramework(BuildInitTestFramework testFramework, BuildScriptBuilder buildScriptBuilder) {
@@ -93,6 +101,20 @@ public abstract class JavaProjectInitDescriptor extends LanguageLibraryProjectIn
                         "Use TestNG for unit tests",
                         "test", "Test", "useTestNG");
                 break;
+            case JUNITJUPITER:
+                buildScriptBuilder
+                    .dependency(
+                        getTestImplementationConfigurationName(),
+                        "Use JUnit Jupiter API for testing.",
+                        "org.junit.jupiter:junit-jupiter-api:" + libraryVersionProvider.getVersion("junitjupiter")
+                    ).dependency(JavaPlugin.TEST_RUNTIME_ONLY_CONFIGURATION_NAME,
+                        "Use JUnit Jupiter Engine for testing.",
+                        "org.junit.jupiter:junit-jupiter-engine:" + libraryVersionProvider.getVersion("junitjupiter")
+                    ).taskMethodInvocation(
+                        "Use junit platform for unit tests",
+                        "test", "Test", "useJUnitPlatform"
+                    );
+                break;
             default:
                 buildScriptBuilder
                     .dependency(getTestImplementationConfigurationName(), "Use JUnit test framework", "junit:junit:" + libraryVersionProvider.getVersion("junit"));
@@ -100,20 +122,25 @@ public abstract class JavaProjectInitDescriptor extends LanguageLibraryProjectIn
         }
     }
 
-    protected void configureBuildScript(BuildScriptBuilder buildScriptBuilder) {
+    protected void configureBuildScript(InitSettings settings, BuildScriptBuilder buildScriptBuilder) {
         // todo: once we use "implementation" for Java projects too, we need to change the comment
         buildScriptBuilder.dependency(getImplementationConfigurationName(),
             "This dependency is found on compile classpath of this component and consumers.",
             "com.google.guava:guava:" + libraryVersionProvider.getVersion("guava"));
     }
 
-    protected abstract TemplateOperation sourceTemplateOperation();
+    protected abstract TemplateOperation sourceTemplateOperation(InitSettings settings);
 
-    protected abstract TemplateOperation testTemplateOperation(BuildInitTestFramework testFramework);
+    protected abstract TemplateOperation testTemplateOperation(InitSettings settings);
 
     @Override
-    public boolean supports(BuildInitTestFramework testFramework) {
-        return testFramework == SPOCK || testFramework == TESTNG;
+    public BuildInitTestFramework getDefaultTestFramework() {
+        return JUNIT;
+    }
+
+    @Override
+    public Set<BuildInitTestFramework> getTestFrameworks() {
+        return new TreeSet<BuildInitTestFramework>(Arrays.asList(JUNIT, JUNITJUPITER, TESTNG, SPOCK));
     }
 
     protected static class Description {

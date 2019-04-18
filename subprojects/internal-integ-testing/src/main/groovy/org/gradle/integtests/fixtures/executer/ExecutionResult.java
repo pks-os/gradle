@@ -24,7 +24,7 @@ public interface ExecutionResult {
     /**
      * Stdout of the Gradle execution, normalized to use new-line char as line separator.
      *
-     * <p>You should avoid using this method as it couples the tests to a particular layout for the console. Instead use the more descriptive assertion methods.</p>
+     * <p>You should avoid using this method as it couples the tests to a particular layout for the console. Instead use the more descriptive assertion methods on this class.</p>
      */
     String getOutput();
 
@@ -41,6 +41,16 @@ public interface ExecutionResult {
      * <p>You should avoid using this method as it couples the tests to a particular layout for the console. Instead use the more descriptive assertion methods.</p>
      */
     String getNormalizedOutput();
+
+    /**
+     * Stdout of the Gradle execution, with ANSI characters interpreted and text attributes rendered as plain text.
+     */
+    String getFormattedOutput();
+
+    /**
+     * Stdout of the Gradle execution, with ANSI characters interpreted and text attributes discarded.
+     */
+    String getPlainTextOutput();
 
     /**
      * Returns a fixture that parses the output and forms them into the expected groups
@@ -62,13 +72,6 @@ public interface ExecutionResult {
     ExecutionResult assertHasErrorOutput(String expectedOutput);
 
     /**
-     * Asserts that this result includes the given error log message in the raw output (including ansi characters and build result message).
-     *
-     * @param expectedOutput The expected log message, with line endings normalized to a newline character.
-     */
-    ExecutionResult assertHasRawErrorOutput(String expectedOutput);
-
-    /**
      * Returns true when this result includes the given error log message. Does not consider any text in or following the build result message (use {@link #assertHasPostBuildOutput(String)} instead).
      *
      * @param expectedOutput The expected log message, with line endings normalized to a newline character.
@@ -83,13 +86,6 @@ public interface ExecutionResult {
      * @param expectedOutput The expected log message, with line endings normalized to a newline character.
      */
     ExecutionResult assertOutputContains(String expectedOutput);
-
-    /**
-     * Asserts that this result includes the given non-error log message (including ansi characters and build result message).
-     *
-     * @param expectedOutput The expected log message, with line endings normalized to a newline character.
-     */
-    ExecutionResult assertRawOutputContains(String expectedOutput);
 
     /**
      * Asserts that the given content includes the given log message.
@@ -137,6 +133,11 @@ public interface ExecutionResult {
      * Asserts that the given task has been executed. Note: ignores buildSrc tasks.
      */
     ExecutionResult assertTaskExecuted(String taskPath);
+
+    /**
+     * Asserts that exactly the given set of tasks have been executed in any order and none of the tasks were skipped. Note: ignores buildSrc tasks.
+     */
+    ExecutionResult assertTasksExecutedAndNotSkipped(Object... taskPaths);
 
     /**
      * Asserts that the given task has not been executed. Note: ignores buildSrc tasks.

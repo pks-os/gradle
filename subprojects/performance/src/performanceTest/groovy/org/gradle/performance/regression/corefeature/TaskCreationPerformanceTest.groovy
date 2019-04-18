@@ -25,7 +25,8 @@ class TaskCreationPerformanceTest extends AbstractCrossVersionPerformanceTest {
         runner.testProject = "createLotsOfTasks"
         runner.tasksToRun = ['help']
         runner.gradleOpts = ["-Xms1g", "-Xmx1g"]
-        runner.targetVersions = ["4.9-20180605034241+0000"]
+        runner.targetVersions = ["5.2-20181218000039+0000"]
+        runner.runs = 60
 
         when:
         def result = runner.run()

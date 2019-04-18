@@ -31,33 +31,19 @@ public abstract class AbstractRenderableDependencyResult extends AbstractRendera
         ComponentSelector requested = getRequested();
         ComponentIdentifier selected = getActual();
 
-        if(requested.matchesStrictly(selected)) {
+        if(exactMatch(requested, selected)) {
             return getSimpleName();
         }
 
         if(requested instanceof ModuleComponentSelector && selected instanceof ModuleComponentIdentifier) {
             ModuleComponentSelector requestedModuleComponentSelector = (ModuleComponentSelector)requested;
             ModuleComponentIdentifier selectedModuleComponentedIdentifier = (ModuleComponentIdentifier)selected;
-
-            if(isSameGroupAndModuleButDifferentVersion(requestedModuleComponentSelector, selectedModuleComponentedIdentifier)) {
+            if(requestedModuleComponentSelector.getModuleIdentifier().equals(selectedModuleComponentedIdentifier.getModuleIdentifier())) {
                 return getSimpleName() + " -> " + selectedModuleComponentedIdentifier.getVersion();
             }
         }
 
         return getSimpleName() + " -> " + selected.getDisplayName();
-    }
-
-    /**
-     * Checks if requested and selected module component differ by version.
-     *
-     * @param requested Requested module component selector
-     * @param selected Selected module component identifier
-     * @return Indicates whether version differs
-     */
-    private boolean isSameGroupAndModuleButDifferentVersion(ModuleComponentSelector requested, ModuleComponentIdentifier selected) {
-        return requested.getGroup().equals(selected.getGroup())
-            && requested.getModule().equals(selected.getModule())
-            && !requested.getVersionConstraint().getPreferredVersion().equals(selected.getVersion());
     }
 
     /**

@@ -101,14 +101,6 @@ public class DefaultResolverResults implements ResolverResults {
     }
 
     @Override
-    public void graphResolved(VisitedArtifactSet visitedArtifacts) {
-        this.visitedArtifacts = visitedArtifacts;
-        this.resolvedLocalComponentsResult = null;
-        this.resolutionResult = null;
-        this.fatalFailure = null;
-    }
-
-    @Override
     public void graphResolved(ResolutionResult resolutionResult, ResolvedLocalComponentsResult resolvedLocalComponentsResult, VisitedArtifactSet visitedArtifacts) {
         this.resolutionResult = resolutionResult;
         this.resolvedLocalComponentsResult = resolvedLocalComponentsResult;
@@ -145,6 +137,17 @@ public class DefaultResolverResults implements ResolverResults {
         } finally {
             nonFatalFailure = null;
         }
+    }
+
+    @Override
+    public Throwable getFailure() {
+        if (fatalFailure != null) {
+            return fatalFailure;
+        }
+        if (nonFatalFailure != null) {
+            return nonFatalFailure;
+        }
+        return null;
     }
 
     @Override

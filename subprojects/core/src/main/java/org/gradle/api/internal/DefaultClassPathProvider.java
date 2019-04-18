@@ -15,7 +15,6 @@
  */
 package org.gradle.api.internal;
 
-import org.gradle.api.internal.classpath.Module;
 import org.gradle.api.internal.classpath.ModuleRegistry;
 import org.gradle.internal.classpath.ClassPath;
 
@@ -28,17 +27,13 @@ public class DefaultClassPathProvider implements ClassPathProvider {
 
     public ClassPath findClassPath(String name) {
         if (name.equals("GRADLE_RUNTIME")) {
-            ClassPath classpath = ClassPath.EMPTY;
-            for (Module module : moduleRegistry.getModule("gradle-launcher").getAllRequiredModules()) {
-                classpath = classpath.plus(module.getClasspath());
-            }
-            return classpath;
+            return moduleRegistry.getModule("gradle-launcher").getAllRequiredModulesClasspath();
         }
         if (name.equals("GRADLE_INSTALLATION_BEACON")) {
             return moduleRegistry.getModule("gradle-installation-beacon").getImplementationClasspath();
         }
-        if (name.equals("COMMONS_CLI")) {
-            return moduleRegistry.getExternalModule("commons-cli").getClasspath();
+        if (name.equals("LANGUAGE-GROOVY")) {
+            return moduleRegistry.getModule("gradle-language-groovy").getAllRequiredModulesClasspath();
         }
         if (name.equals("ANT")) {
             ClassPath classpath = ClassPath.EMPTY;

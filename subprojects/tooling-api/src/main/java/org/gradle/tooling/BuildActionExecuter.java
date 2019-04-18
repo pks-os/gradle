@@ -24,11 +24,10 @@ import org.gradle.api.Incubating;
  * @param <T> The type of result produced by this executer.
  * @since 1.8
  */
-@Incubating
 public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildActionExecuter<T>> {
 
     /**
-     * Builder for a a build action that hooks into different phases of the build.
+     * Builder for a build action that hooks into different phases of the build.
      *
      * <p>A single {@link BuildAction} is allowed per build phase. Use composite actions if needed.
      *
@@ -82,7 +81,6 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
      * @return this
      * @since 3.5
      */
-    @Incubating
     BuildActionExecuter<T> forTasks(String... tasks);
 
     /**
@@ -94,7 +92,6 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
      * @return this
      * @since 3.5
      */
-    @Incubating
     BuildActionExecuter<T> forTasks(Iterable<String> tasks);
 
     /**

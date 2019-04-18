@@ -17,10 +17,8 @@
 package org.gradle.language.nativeplatform.internal.incremental;
 
 import com.google.common.collect.ImmutableSet;
-import org.gradle.api.internal.changedetection.state.FileSnapshot;
-import org.gradle.api.internal.changedetection.state.FileSystemSnapshotter;
-import org.gradle.internal.file.FileType;
 import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.snapshot.FileSystemSnapshotter;
 import org.gradle.language.nativeplatform.internal.Include;
 import org.gradle.language.nativeplatform.internal.IncludeDirectives;
 import org.gradle.language.nativeplatform.internal.IncludeType;
@@ -44,23 +42,25 @@ public class IncrementalCompileFilesFactory {
     private static final Logger LOGGER = LoggerFactory.getLogger(IncrementalCompileFilesFactory.class);
     private static final String IGNORE_UNRESOLVED_HEADERS_IN_DEPENDENCIES_PROPERTY_NAME = "org.gradle.internal.native.headers.unresolved.dependencies.ignore";
 
+    private final IncludeDirectives initialIncludeDirectives;
     private final SourceIncludesParser sourceIncludesParser;
     private final SourceIncludesResolver sourceIncludesResolver;
     private final FileSystemSnapshotter fileSystemSnapshotter;
     private final boolean ignoreUnresolvedHeadersInDependencies;
 
-    public IncrementalCompileFilesFactory(SourceIncludesParser sourceIncludesParser, SourceIncludesResolver sourceIncludesResolver, FileSystemSnapshotter fileSystemSnapshotter) {
+    public IncrementalCompileFilesFactory(IncludeDirectives initialIncludeDirectives, SourceIncludesParser sourceIncludesParser, SourceIncludesResolver sourceIncludesResolver, FileSystemSnapshotter fileSystemSnapshotter) {
+        this.initialIncludeDirectives = initialIncludeDirectives;
         this.sourceIncludesParser = sourceIncludesParser;
         this.sourceIncludesResolver = sourceIncludesResolver;
         this.fileSystemSnapshotter = fileSystemSnapshotter;
         this.ignoreUnresolvedHeadersInDependencies = Boolean.getBoolean(IGNORE_UNRESOLVED_HEADERS_IN_DEPENDENCIES_PROPERTY_NAME);
     }
 
-    public IncementalCompileSourceProcessor files(CompilationState previousCompileState) {
-        return new DefaultIncementalCompileSourceProcessor(previousCompileState);
+    public IncrementalCompileSourceProcessor files(CompilationState previousCompileState) {
+        return new DefaultIncrementalCompileSourceProcessor(previousCompileState);
     }
 
-    private class DefaultIncementalCompileSourceProcessor implements IncementalCompileSourceProcessor {
+    private class DefaultIncrementalCompileSourceProcessor implements IncrementalCompileSourceProcessor {
         private final CompilationState previous;
         private final BuildableCompilationState current = new BuildableCompilationState();
         private final List<File> toRecompile = new ArrayList<File>();
@@ -68,7 +68,7 @@ public class IncrementalCompileFilesFactory {
         private final Map<File, FileDetails> visitedFiles = new HashMap<File, FileDetails>();
         private boolean hasUnresolvedHeaders;
 
-        DefaultIncementalCompileSourceProcessor(CompilationState previousCompileState) {
+        DefaultIncrementalCompileSourceProcessor(CompilationState previousCompileState) {
             this.previous = previousCompileState == null ? new CompilationState() : previousCompileState;
         }
 
@@ -88,8 +88,8 @@ public class IncrementalCompileFilesFactory {
          * @return true if this source file requires recompilation, false otherwise.
          */
         private boolean visitSourceFile(File sourceFile) {
-            FileSnapshot fileSnapshot = fileSystemSnapshotter.snapshotSelf(sourceFile);
-            if (fileSnapshot.getType() != FileType.RegularFile) {
+            HashCode fileContent = fileSystemSnapshotter.getRegularFileContentHash(sourceFile);
+            if (fileContent == null) {
                 // Skip things that aren't files
                 return false;
             }
@@ -98,7 +98,7 @@ public class IncrementalCompileFilesFactory {
 
             if (previousState != null) {
                 // Already seen this source file before. See if we can reuse the analysis from last time
-                if (graphHasNotChanged(sourceFile, fileSnapshot, previousState, existingHeaders)) {
+                if (graphHasNotChanged(sourceFile, fileContent, previousState, existingHeaders)) {
                     // Include file graph for this source file has not changed, skip this file
                     current.setState(sourceFile, previousState);
                     if (previousState.isHasUnresolved() && !ignoreUnresolvedHeadersInDependencies) {
@@ -113,11 +113,11 @@ public class IncrementalCompileFilesFactory {
             // Source file has not been compiled before, or its include file graph has changed in some way
             // Calculate the include file graph for the source file and mark for recompilation
 
-            CollectingMacroLookup visibleMacros = new CollectingMacroLookup();
-            FileVisitResult result = visitFile(sourceFile, fileSnapshot, visibleMacros, new HashSet<HashCode>(), existingHeaders);
+            CollectingMacroLookup visibleMacros = new CollectingMacroLookup(initialIncludeDirectives);
+            FileVisitResult result = visitFile(sourceFile, fileContent, visibleMacros, new HashSet<HashCode>(), existingHeaders);
             Set<IncludeFileEdge> includedFiles = new LinkedHashSet<IncludeFileEdge>();
             result.collectFilesInto(includedFiles, new HashSet<File>());
-            SourceFileState newState = new SourceFileState(fileSnapshot.getContent().getContentMd5(), result.result == IncludeFileResolutionResult.UnresolvedMacroIncludes, ImmutableSet.copyOf(includedFiles));
+            SourceFileState newState = new SourceFileState(fileContent, result.result == IncludeFileResolutionResult.UnresolvedMacroIncludes, ImmutableSet.copyOf(includedFiles));
             current.setState(sourceFile, newState);
             if (newState.isHasUnresolved()) {
                 hasUnresolvedHeaders = true;
@@ -125,8 +125,8 @@ public class IncrementalCompileFilesFactory {
             return true;
         }
 
-        private boolean graphHasNotChanged(File sourceFile, FileSnapshot fileSnapshot, SourceFileState previousState, Set<File> existingHeaders) {
-            if (!fileSnapshot.getContent().getContentMd5().equals(previousState.getHash())) {
+        private boolean graphHasNotChanged(File sourceFile, HashCode fileHash, SourceFileState previousState, Set<File> existingHeaders) {
+            if (!fileHash.equals(previousState.getHash())) {
                 // Source file has changed
                 return false;
             }
@@ -138,7 +138,7 @@ public class IncrementalCompileFilesFactory {
             // Check each unique edge in the include file graph
             Map<HashCode, File> includes = new HashMap<HashCode, File>(previousState.getEdges().size());
             Set<File> headers = new HashSet<File>();
-            includes.put(fileSnapshot.getContent().getContentMd5(), sourceFile);
+            includes.put(fileHash, sourceFile);
             for (IncludeFileEdge includeFileEdge : previousState.getEdges()) {
                 File includedFrom = includeFileEdge.getIncludedBy() != null ? includes.get(includeFileEdge.getIncludedBy()) : null;
                 SourceIncludesResolver.IncludeFile includeFile = sourceIncludesResolver.resolveInclude(includedFrom, includeFileEdge.getIncludePath());
@@ -146,7 +146,7 @@ public class IncrementalCompileFilesFactory {
                     // Include file not found (but previously was found)
                     return false;
                 }
-                HashCode hash = includeFile.getSnapshot().getContent().getContentMd5();
+                HashCode hash = includeFile.getContentHash();
                 if (!hash.equals(includeFileEdge.getResolvedTo())) {
                     // Include file changed
                     return false;
@@ -161,7 +161,7 @@ public class IncrementalCompileFilesFactory {
             return true;
         }
 
-        private FileVisitResult visitFile(File file, FileSnapshot fileSnapshot, CollectingMacroLookup visibleMacros, Set<HashCode> visited, Set<File> existingHeaders) {
+        private FileVisitResult visitFile(File file, HashCode newHash, CollectingMacroLookup visibleMacros, Set<HashCode> visited, Set<File> existingHeaders) {
             FileDetails fileDetails = visitedFiles.get(file);
             if (fileDetails != null && fileDetails.results != null) {
                 // A file that we can safely reuse the result for
@@ -169,7 +169,6 @@ public class IncrementalCompileFilesFactory {
                 return fileDetails.results;
             }
 
-            HashCode newHash = fileSnapshot.getContent().getContentMd5();
             if (!visited.add(newHash)) {
                 // A cycle, treat as resolved here
                 return new FileVisitResult(file);
@@ -201,13 +200,13 @@ public class IncrementalCompileFilesFactory {
                 }
                 for (SourceIncludesResolver.IncludeFile includeFile : resolutionResult.getFiles()) {
                     existingHeaders.add(includeFile.getFile());
-                    FileVisitResult includeVisitResult = visitFile(includeFile.getFile(), includeFile.getSnapshot(), visibleMacros, visited, existingHeaders);
+                    FileVisitResult includeVisitResult = visitFile(includeFile.getFile(), includeFile.getContentHash(), visibleMacros, visited, existingHeaders);
                     if (includeVisitResult.result.ordinal() > result.ordinal()) {
                         result = includeVisitResult.result;
                     }
                     includeVisitResult.collectDependencies(includedFileDirectives);
                     included.add(includeVisitResult);
-                    edges.add(new IncludeFileEdge(includeFile.getPath(), includeFile.isQuotedInclude() ? newHash : null, includeFile.getSnapshot().getContent().getContentMd5()));
+                    edges.add(new IncludeFileEdge(includeFile.getPath(), includeFile.isQuotedInclude() ? newHash : null, includeFile.getContentHash()));
                 }
             }
 

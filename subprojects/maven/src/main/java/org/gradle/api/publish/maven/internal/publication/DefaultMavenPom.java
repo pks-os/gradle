@@ -20,7 +20,9 @@ import org.gradle.api.Action;
 import org.gradle.api.XmlProvider;
 import org.gradle.api.internal.UserCodeAction;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.publish.internal.versionmapping.VersionMappingStrategyInternal;
 import org.gradle.api.publish.maven.MavenDependency;
 import org.gradle.api.publish.maven.MavenPomCiManagement;
 import org.gradle.api.publish.maven.MavenPomContributor;
@@ -64,6 +66,7 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
     private MavenPomCiManagement ciManagement;
     private MavenPomDistributionManagementInternal distributionManagement;
     private final List<MavenPomMailingList> mailingLists = new ArrayList<MavenPomMailingList>();
+    private final MapProperty<String, String> properties;
 
     public DefaultMavenPom(MavenPublicationInternal mavenPublication, Instantiator instantiator, ObjectFactory objectFactory) {
         this.mavenPublication = mavenPublication;
@@ -73,6 +76,7 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
         this.description = objectFactory.property(String.class);
         this.url = objectFactory.property(String.class);
         this.inceptionYear = objectFactory.property(String.class);
+        this.properties = objectFactory.mapProperty(String.class, String.class);
     }
 
     public void withXml(Action<? super XmlProvider> action) {
@@ -81,6 +85,16 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
 
     public Action<XmlProvider> getXmlAction() {
         return xmlAction;
+    }
+
+    @Override
+    public VersionMappingStrategyInternal getVersionMappingStrategy() {
+        return mavenPublication.getVersionMappingStrategy();
+    }
+
+    @Override
+    public boolean writeGradleMetadataMarker() {
+        return mavenPublication.writeGradleMetadataMarker();
     }
 
     public String getPackaging() {
@@ -239,6 +253,11 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
         return mailingLists;
     }
 
+    @Override
+    public MapProperty<String, String> getProperties() {
+        return properties;
+    }
+
     public MavenProjectIdentity getProjectIdentity() {
         return mavenPublication.getMavenProjectIdentity();
     }
@@ -246,6 +265,11 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
     @Override
     public Set<MavenDependencyInternal> getApiDependencies() {
         return mavenPublication.getApiDependencies();
+    }
+
+    @Override
+    public Set<MavenDependencyInternal> getOptionalDependencies() {
+        return mavenPublication.getOptionalDependencies();
     }
 
     public Set<MavenDependencyInternal> getRuntimeDependencies() {
@@ -260,6 +284,11 @@ public class DefaultMavenPom implements MavenPomInternal, MavenPomLicenseSpec, M
     @Override
     public Set<MavenDependency> getRuntimeDependencyManagement() {
         return mavenPublication.getRuntimeDependencyConstraints();
+    }
+
+    @Override
+    public Set<MavenDependency> getImportDependencyManagement() {
+        return mavenPublication.getImportDependencyConstraints();
     }
 
     private <T> void configureAndAdd(Class<? extends T> clazz, Action<? super T> action, List<T> items) {

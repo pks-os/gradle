@@ -18,11 +18,9 @@ package org.gradle.api.plugins.quality;
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.internal.ClosureBackedAction;
 import org.gradle.api.internal.project.IsolatedAntBuilder;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.quality.internal.PmdInvoker;
@@ -43,6 +41,7 @@ import org.gradle.api.tasks.VerificationTask;
 import org.gradle.internal.nativeintegration.console.ConsoleDetector;
 import org.gradle.internal.nativeintegration.console.ConsoleMetaData;
 import org.gradle.internal.nativeintegration.services.NativeServices;
+import org.gradle.util.ClosureBackedAction;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -72,14 +71,8 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
         reports = getObjectFactory().newInstance(PmdReportsImpl.class, this);
     }
 
-    /**
-     * Injects and returns an instance of {@link org.gradle.api.model.ObjectFactory}.
-     *
-     * @since 4.2
-     */
-    @Incubating
     @Inject
-    public ObjectFactory getObjectFactory() {
+    protected ObjectFactory getObjectFactory() {
         throw new UnsupportedOperationException();
     }
 
@@ -152,9 +145,11 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
     }
 
     /**
-     * The built-in rule sets to be used. See the <a href="http://pmd.sourceforge.net/rules/index.html">official list</a> of built-in rule sets.
+     * The built-in rule sets to be used. See the <a href="https://pmd.github.io/pmd-6.8.0/pmd_rules_java.html">official list</a> of built-in rule sets.
      *
-     * Example: ruleSets = ["basic", "braces"]
+     * <pre>
+     *     ruleSets = ["basic", "braces"]
+     * </pre>
      */
     @Input
     public List<String> getRuleSets() {
@@ -162,9 +157,11 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
     }
 
     /**
-     * The built-in rule sets to be used. See the <a href="http://pmd.sourceforge.net/rules/index.html">official list</a> of built-in rule sets.
+     * The built-in rule sets to be used. See the <a href="https://pmd.github.io/pmd-6.8.0/pmd_rules_java.html">official list</a> of built-in rule sets.
      *
-     * Example: ruleSets = ["basic", "braces"]
+     * <pre>
+     *     ruleSets = ["basic", "braces"]
+     * </pre>
      */
     public void setRuleSets(List<String> ruleSets) {
         this.ruleSets = ruleSets;
@@ -190,11 +187,12 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * See the <a href="http://pmd.sourceforge.net/howtomakearuleset.html">official documentation</a> for how to author a rule set.
      *
-     * Example: ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
+     * <pre>
+     *     ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
+     * </pre>
      *
      * @since 2.2
      */
-    @Incubating
     @Nullable
     @Optional
     @Nested
@@ -207,19 +205,23 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * See the <a href="http://pmd.sourceforge.net/howtomakearuleset.html">official documentation</a> for how to author a rule set.
      *
-     * Example: ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
+     * <pre>
+     *     ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
+     * </pre>
      *
      * @since 2.2
      */
-    @Incubating
     public void setRuleSetConfig(@Nullable TextResource ruleSetConfig) {
         this.ruleSetConfig = ruleSetConfig;
     }
 
     /**
      * The custom rule set files to be used. See the <a href="http://pmd.sourceforge.net/howtomakearuleset.html">official documentation</a> for how to author a rule set file.
+     * If you want to only use custom rule sets, you must clear {@code ruleSets}.
      *
-     * Example: ruleSetFiles = files("config/pmd/myRuleSets.xml")
+     * <pre>
+     *     ruleSetFiles = files("config/pmd/myRuleSet.xml")
+     * </pre>
      */
     @InputFiles
     @PathSensitive(PathSensitivity.NONE)
@@ -229,8 +231,11 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
 
     /**
      * The custom rule set files to be used. See the <a href="http://pmd.sourceforge.net/howtomakearuleset.html">official documentation</a> for how to author a rule set file.
+     * This adds to the default rule sets defined by {@link #getRuleSets()}.
      *
-     * Example: ruleSetFiles = files("config/pmd/myRuleSets.xml")
+     * <pre>
+     *     ruleSetFiles = files("config/pmd/myRuleSets.xml")
+     * </pre>
      */
     public void setRuleSetFiles(FileCollection ruleSetFiles) {
         this.ruleSetFiles = ruleSetFiles;
@@ -247,7 +252,9 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
     /**
      * Whether or not to allow the build to continue if there are warnings.
      *
-     * Example: ignoreFailures = true
+     * <pre>
+     *     ignoreFailures = true
+     * </pre>
      */
     public boolean getIgnoreFailures() {
         return ignoreFailures;
@@ -257,7 +264,9 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
     /**
      * Whether or not to allow the build to continue if there are warnings.
      *
-     * Example: ignoreFailures = true
+     * <pre>
+     *     ignoreFailures = true
+     * </pre>
      */
     public void setIgnoreFailures(boolean ignoreFailures) {
         this.ignoreFailures = ignoreFailures;
@@ -270,7 +279,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      * @see PmdExtension#rulePriority
      */
     @Input
-    @Incubating
     public int getRulePriority() {
         return rulePriority;
     }
@@ -280,7 +288,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * @since 2.8
      */
-    @Incubating
     public void setRulePriority(int intValue) {
         validate(intValue);
         rulePriority = intValue;
@@ -293,7 +300,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      * @since 2.1
      */
     @Input
-    @Incubating
     public boolean isConsoleOutput() {
         return consoleOutput;
     }
@@ -303,7 +309,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * @since 2.1
      */
-    @Incubating
     public void setConsoleOutput(boolean consoleOutput) {
         this.consoleOutput = consoleOutput;
     }
@@ -317,7 +322,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * @since 2.8
      */
-    @Incubating
     @Nullable
     @Optional
     @Classpath
@@ -334,7 +338,6 @@ public class Pmd extends SourceTask implements VerificationTask, Reporting<PmdRe
      *
      * @since 2.8
      */
-    @Incubating
     public void setClasspath(@Nullable FileCollection classpath) {
         this.classpath = classpath;
     }

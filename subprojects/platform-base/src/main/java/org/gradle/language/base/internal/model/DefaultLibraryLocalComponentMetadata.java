@@ -16,12 +16,14 @@
 package org.gradle.language.base.internal.model;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.component.LibraryBinaryIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingState;
 import org.gradle.api.internal.attributes.EmptySchema;
@@ -84,7 +86,7 @@ public class DefaultLibraryLocalComponentMetadata extends DefaultLocalComponentM
                 usage,
                 String.format("Request metadata: %s", componentId.getDisplayName()),
                 Collections.<String>emptySet(),
-                Collections.singleton(usage),
+                ImmutableSet.of(usage),
                 true,
                 true,
                 ImmutableAttributes.EMPTY,
@@ -99,8 +101,8 @@ public class DefaultLibraryLocalComponentMetadata extends DefaultLocalComponentM
         metadata.addDependencies(value, defaultProject, configuration);
     }
 
-    private static DefaultModuleVersionIdentifier localModuleVersionIdentifierFor(LibraryBinaryIdentifier componentId) {
-        return new DefaultModuleVersionIdentifier(componentId.getProjectPath(), componentId.getLibraryName(), VERSION);
+    private static ModuleVersionIdentifier localModuleVersionIdentifierFor(LibraryBinaryIdentifier componentId) {
+        return DefaultModuleVersionIdentifier.newId(componentId.getProjectPath(), componentId.getLibraryName(), VERSION);
     }
 
     private DefaultLibraryLocalComponentMetadata(ModuleVersionIdentifier id, ComponentIdentifier componentIdentifier) {
@@ -147,7 +149,7 @@ public class DefaultLibraryLocalComponentMetadata extends DefaultLocalComponentM
     }
 
     private ModuleComponentSelector moduleComponentSelectorFrom(ModuleDependencySpec module) {
-        return DefaultModuleComponentSelector.newSelector(module.getGroup(), module.getName(), effectiveVersionFor(module.getVersion()));
+        return DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(module.getGroup(), module.getName()), effectiveVersionFor(module.getVersion()));
     }
 
     /**
@@ -161,13 +163,13 @@ public class DefaultLibraryLocalComponentMetadata extends DefaultLocalComponentM
         return new LocalComponentDependencyMetadata(
             new OpaqueComponentIdentifier("TODO"),
             selector, usageConfigurationName, null, ImmutableAttributes.EMPTY, mappedUsageConfiguration,
-            ImmutableList.<IvyArtifactName>of(),
+                ImmutableList.<IvyArtifactName>of(),
             EXCLUDE_RULES,
             false, false, true, false, null);
     }
 
     @Override
-    public BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, Set<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, boolean canBeResolved, ImmutableCapabilities capabilities) {
+    public BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, ImmutableSet<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, boolean canBeResolved, ImmutableCapabilities capabilities) {
         assert hierarchy.contains(name);
         DefaultLocalConfigurationMetadata conf = new LibraryLocalConfigurationMetadata(name, description, visible, transitive, extendsFrom, hierarchy, attributes, canBeConsumed, canBeResolved, capabilities);
         addToConfigurations(name, conf);
@@ -181,7 +183,7 @@ public class DefaultLibraryLocalComponentMetadata extends DefaultLocalComponentM
                                           boolean visible,
                                           boolean transitive,
                                           Set<String> extendsFrom,
-                                          Set<String> hierarchy,
+                                          ImmutableSet<String> hierarchy,
                                           ImmutableAttributes attributes,
                                           boolean canBeConsumed,
                                           boolean canBeResolved,

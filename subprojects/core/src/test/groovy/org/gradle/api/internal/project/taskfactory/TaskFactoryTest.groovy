@@ -20,44 +20,42 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Task
 import org.gradle.api.internal.AbstractTask
-import org.gradle.api.internal.ClassGenerator
 import org.gradle.api.internal.TaskInternal
+import org.gradle.api.reflect.ObjectInstantiationException
 import org.gradle.api.tasks.TaskInstantiationException
 import org.gradle.internal.reflect.Instantiator
-import org.gradle.api.reflect.ObjectInstantiationException
+import org.gradle.internal.reflect.JavaReflectionUtil
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
 class TaskFactoryTest extends AbstractProjectBuilderSpec {
-    final ClassGenerator generator = Mock()
     final Instantiator instantiator = Mock()
     ITaskFactory taskFactory
 
     def setup() {
-        taskFactory = new TaskFactory(generator).createChild(project, instantiator)
-        _ * generator.generate(_) >> { Class type -> type }
-        _ * instantiator.newInstance(_) >> { args -> args[0].newInstance() }
+        taskFactory = new TaskFactory().createChild(project, instantiator)
+        _ * instantiator.newInstance(_) >> { args -> JavaReflectionUtil.newInstance(args[0]) }
     }
 
-    public void injectsProjectAndNameIntoTask() {
+    void injectsProjectAndNameIntoTask() {
         when:
-        Task task = taskFactory.create("task", DefaultTask)
+        Task task = taskFactory.create(new TaskIdentity(DefaultTask, "task", null, null, null, 12))
 
         then:
         task.project == project
         task.name == 'task'
     }
 
-    public void testCreateTaskOfTypeWithNoArgsConstructor() {
+    void testCreateTaskOfTypeWithNoArgsConstructor() {
         when:
-        Task task = taskFactory.create('task', TestDefaultTask.class)
+        Task task = taskFactory.create(new TaskIdentity(TestDefaultTask, 'task', null, null, null, 12))
 
         then:
         task instanceof TestDefaultTask
     }
 
-    public void testCreateTaskWhereSuperTypeOfDefaultImplementationRequested() {
+    void testCreateTaskWhereSuperTypeOfDefaultImplementationRequested() {
         when:
-        Task task = taskFactory.create('task', type)
+        Task task = taskFactory.create(new TaskIdentity(type, 'task', null, null, null, 12))
 
         then:
         task instanceof DefaultTask
@@ -66,33 +64,20 @@ class TaskFactoryTest extends AbstractProjectBuilderSpec {
         type << [Task, TaskInternal, AbstractTask, DefaultTask]
     }
 
-    public void instantiatesAnInstanceOfTheDecoratedTaskType() {
+    void testCreateTaskForTypeWhichDoesNotImplementTask() {
         when:
-        Task task = taskFactory.create('task', TestDefaultTask.class)
-
-        then:
-        task instanceof DecoratedTask
-
-        and:
-        1 * generator.generate(TestDefaultTask) >> DecoratedTask
-        1 * instantiator.newInstance(DecoratedTask) >> { new DecoratedTask() }
-        0 * _._
-    }
-
-    public void testCreateTaskForTypeWhichDoesNotImplementTask() {
-        when:
-        taskFactory.create('task', NotATask)
+        taskFactory.create(new TaskIdentity(NotATask, 'task', null, null, null, 12))
 
         then:
         InvalidUserDataException e = thrown()
         e.message == "Cannot create task of type 'NotATask' as it does not implement the Task interface."
     }
 
-    public void wrapsFailureToCreateTaskInstance() {
+    void wrapsFailureToCreateTaskInstance() {
         def failure = new RuntimeException()
 
         when:
-        taskFactory.create('task', TestDefaultTask)
+        taskFactory.create(new TaskIdentity(TestDefaultTask, 'task', null, null, null, 12))
 
         then:
         TaskInstantiationException e = thrown()
@@ -103,12 +88,12 @@ class TaskFactoryTest extends AbstractProjectBuilderSpec {
         _ * instantiator.newInstance(TestDefaultTask) >> { throw new ObjectInstantiationException(TestDefaultTask, failure) }
     }
 
-    public static class TestDefaultTask extends DefaultTask {
+    static class TestDefaultTask extends DefaultTask {
     }
 
-    public static class DecoratedTask extends TestDefaultTask {
+    static class DecoratedTask extends TestDefaultTask {
     }
 
-    public static class NotATask {
+    static class NotATask {
     }
 }

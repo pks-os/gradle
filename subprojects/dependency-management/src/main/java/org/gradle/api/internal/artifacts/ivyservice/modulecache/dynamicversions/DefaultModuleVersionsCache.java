@@ -16,7 +16,7 @@
 package org.gradle.api.internal.artifacts.ivyservice.modulecache.dynamicversions;
 
 import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
-import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager;
+import org.gradle.api.internal.artifacts.ivyservice.ArtifactCacheLockingManager;
 import org.gradle.cache.PersistentIndexedCache;
 import org.gradle.internal.serialize.AbstractSerializer;
 import org.gradle.internal.serialize.Decoder;
@@ -26,16 +26,16 @@ import org.gradle.util.BuildCommencedTimeProvider;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-public class DefaultModuleVersionsCache extends InMemoryModuleVersionsCache {
+public class DefaultModuleVersionsCache extends AbstractModuleVersionsCache {
 
-    private final CacheLockingManager cacheLockingManager;
+    private final ArtifactCacheLockingManager artifactCacheLockingManager;
     private final ImmutableModuleIdentifierFactory moduleIdentifierFactory;
 
     private PersistentIndexedCache<ModuleAtRepositoryKey, ModuleVersionsCacheEntry> cache;
 
-    public DefaultModuleVersionsCache(BuildCommencedTimeProvider timeProvider, CacheLockingManager cacheLockingManager, ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
+    public DefaultModuleVersionsCache(BuildCommencedTimeProvider timeProvider, ArtifactCacheLockingManager artifactCacheLockingManager, ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
         super(timeProvider);
-        this.cacheLockingManager = cacheLockingManager;
+        this.artifactCacheLockingManager = artifactCacheLockingManager;
         this.moduleIdentifierFactory = moduleIdentifierFactory;
     }
 
@@ -47,25 +47,17 @@ public class DefaultModuleVersionsCache extends InMemoryModuleVersionsCache {
     }
 
     private PersistentIndexedCache<ModuleAtRepositoryKey, ModuleVersionsCacheEntry> initCache() {
-        return cacheLockingManager.createCache("module-versions", new ModuleKeySerializer(moduleIdentifierFactory), new ModuleVersionsCacheEntrySerializer());
+        return artifactCacheLockingManager.createCache("module-versions", new ModuleKeySerializer(moduleIdentifierFactory), new ModuleVersionsCacheEntrySerializer());
     }
 
     @Override
     protected void store(ModuleAtRepositoryKey key, ModuleVersionsCacheEntry entry) {
-        super.store(key, entry);
         getCache().put(key, entry);
     }
 
     @Override
     protected ModuleVersionsCacheEntry get(ModuleAtRepositoryKey key) {
-        ModuleVersionsCacheEntry entry = super.get(key);
-        if (entry == null) {
-            entry = getCache().get(key);
-            if (entry != null) {
-                super.store(key, entry);
-            }
-        }
-        return entry;
+        return getCache().get(key);
     }
 
     private static class ModuleKeySerializer extends AbstractSerializer<ModuleAtRepositoryKey> {

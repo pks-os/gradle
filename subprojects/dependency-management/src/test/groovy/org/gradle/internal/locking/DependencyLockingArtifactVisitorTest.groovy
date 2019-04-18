@@ -16,8 +16,10 @@
 
 package org.gradle.internal.locking
 
+import org.gradle.api.artifacts.ModuleIdentifier
 import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingProvider
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingState
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphComponent
@@ -39,6 +41,8 @@ class DependencyLockingArtifactVisitorTest extends Specification {
     RootGraphNode rootNode = Mock()
     RootConfigurationMetadata metadata = Mock()
     DependencyLockingState lockState = Mock()
+    ModuleIdentifier mid = DefaultModuleIdentifier.newId("org", "foo")
+
     @Subject
     def visitor = new DependencyLockingArtifactVisitor(configuration, dependencyLockingProvider)
 
@@ -77,7 +81,7 @@ class DependencyLockingArtifactVisitorTest extends Specification {
 
         then:
         2 * node.owner >> component
-        1 * component.componentId >> newId('org', 'foo', '1.0')
+        1 * component.componentId >> newId(mid, '1.0')
     }
 
     def 'ignores node having a ModuleComponentIdentifier but an empty version'() {
@@ -122,7 +126,7 @@ class DependencyLockingArtifactVisitorTest extends Specification {
 
     def 'finishes without error when visited match expected'() {
         given:
-        def id = newId('org', 'foo', '1.1')
+        def id = newId(mid, '1.1')
         startWithState([id])
         addVisitedNode(id)
 
@@ -133,34 +137,40 @@ class DependencyLockingArtifactVisitorTest extends Specification {
         notThrown(LockOutOfDateException)
     }
 
-    def 'throws when extra modules visited'() {
+    def 'generates failures when extra modules visited'() {
         given:
         startWithState([])
-        addVisitedNode(newId('org', 'foo', '1.0'))
+        addVisitedNode(newId(mid, '1.0'))
 
         when:
-        visitor.complete()
+        def failures = visitor.collectLockingFailures()
 
         then:
-        def ex = thrown(LockOutOfDateException)
-        ex.message.contains("Resolved 'org:foo:1.0' which is not part of the lock state")
+        failures.size() == 1
+        failures.each {
+            assert it.problem instanceof LockOutOfDateException
+            assert it.problem.message.contains("Resolved 'org:foo:1.0' which is not part of the dependency lock state")
+        }
     }
 
-    def 'throws when module not visited'() {
+    def 'generates failures when module not visited'() {
         given:
-        startWithState([newId('org', 'foo', '1.1')])
+        startWithState([newId(mid, '1.1')])
 
         when:
-        visitor.complete()
+        def failures = visitor.collectLockingFailures()
 
         then:
-        def ex = thrown(LockOutOfDateException)
-        ex.message.contains("Did not resolve 'org:foo:1.1' which is part of the lock state")
+        failures.size() == 1
+        failures.each {
+            assert it.problem instanceof LockOutOfDateException
+            assert it.problem.message.contains("Did not resolve 'org:foo:1.1' which is part of the dependency lock state")
+        }
     }
 
     def 'invokes locking provider on complete with visited modules'() {
         given:
-        def identifier = newId('org', 'foo', '1.1')
+        def identifier = newId(mid, '1.1')
         startWithoutLockState()
         addVisitedNode(identifier)
 
@@ -174,7 +184,7 @@ class DependencyLockingArtifactVisitorTest extends Specification {
 
     def 'invokes locking provider on complete with visited modules and indicates changing modules seen'() {
         given:
-        def identifier = newId('org', 'foo', '1.1')
+        def identifier = newId(mid, '1.1')
         startWithoutLockState()
         addVisitedChangingNode(identifier)
 

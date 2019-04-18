@@ -19,23 +19,19 @@ package org.gradle.internal.service.scopes;
 import com.google.common.collect.Iterables;
 import org.gradle.api.execution.internal.DefaultTaskInputsListener;
 import org.gradle.api.execution.internal.TaskInputsListener;
-import org.gradle.api.internal.AsmBackedClassGenerator;
-import org.gradle.api.internal.ClassGenerator;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.DefaultClassPathProvider;
 import org.gradle.api.internal.DefaultClassPathRegistry;
-import org.gradle.api.internal.DefaultInstantiatorFactory;
 import org.gradle.api.internal.DynamicModulesClassPathProvider;
-import org.gradle.api.internal.InstantiatorFactory;
 import org.gradle.api.internal.StartParameterInternal;
 import org.gradle.api.internal.cache.StringInterner;
-import org.gradle.api.internal.changedetection.state.InMemoryCacheDecoratorFactory;
 import org.gradle.api.internal.classpath.DefaultModuleRegistry;
 import org.gradle.api.internal.classpath.DefaultPluginModuleRegistry;
 import org.gradle.api.internal.classpath.ModuleRegistry;
 import org.gradle.api.internal.classpath.PluginModuleRegistry;
-import org.gradle.api.internal.file.DefaultFileCollectionFactory;
+import org.gradle.api.internal.file.DefaultFilePropertyFactory;
 import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.internal.file.TemporaryFileProvider;
 import org.gradle.api.internal.file.TmpDirTemporaryFileProvider;
 import org.gradle.api.internal.file.collections.DefaultDirectoryFileTreeFactory;
@@ -52,6 +48,8 @@ import org.gradle.cache.FileLockManager;
 import org.gradle.cache.internal.CacheFactory;
 import org.gradle.cache.internal.CrossBuildInMemoryCacheFactory;
 import org.gradle.cache.internal.DefaultCacheFactory;
+import org.gradle.cache.internal.DefaultCrossBuildInMemoryCacheFactory;
+import org.gradle.cache.internal.InMemoryCacheDecoratorFactory;
 import org.gradle.cli.CommandLineConverter;
 import org.gradle.configuration.DefaultImportsReader;
 import org.gradle.configuration.ImportsReader;
@@ -72,24 +70,29 @@ import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.concurrent.ParallelismConfigurationManager;
 import org.gradle.internal.environment.GradleBuildEnvironment;
 import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.execution.history.changes.DefaultExecutionStateChangeDetector;
+import org.gradle.internal.execution.history.changes.ExecutionStateChangeDetector;
 import org.gradle.internal.filewatch.DefaultFileWatcherFactory;
 import org.gradle.internal.filewatch.FileWatcherFactory;
-import org.gradle.internal.hash.ContentHasherFactory;
-import org.gradle.internal.hash.DefaultContentHasherFactory;
 import org.gradle.internal.hash.DefaultStreamHasher;
 import org.gradle.internal.hash.StreamHasher;
 import org.gradle.internal.installation.CurrentGradleInstallation;
 import org.gradle.internal.installation.GradleRuntimeShadedJarDetector;
+import org.gradle.internal.instantiation.DefaultInstantiatorFactory;
+import org.gradle.internal.instantiation.InjectAnnotationHandler;
+import org.gradle.internal.instantiation.InstantiatorFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
+import org.gradle.internal.logging.events.OutputEventListener;
+import org.gradle.internal.logging.progress.DefaultProgressLoggerFactory;
 import org.gradle.internal.logging.progress.ProgressLoggerFactory;
+import org.gradle.internal.logging.services.ProgressLoggingBridge;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.operations.BuildOperationIdFactory;
 import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.internal.operations.DefaultBuildOperationIdFactory;
 import org.gradle.internal.operations.DefaultBuildOperationListenerManager;
-import org.gradle.internal.progress.BuildProgressFilter;
-import org.gradle.internal.progress.BuildProgressLogger;
+import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.remote.MessagingServer;
 import org.gradle.internal.remote.services.MessagingServices;
@@ -197,14 +200,8 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return new DefaultPluginModuleRegistry(moduleRegistry);
     }
 
-    BuildProgressLogger createBuildProgressLogger(ProgressLoggerFactory progressLoggerFactory, ListenerManager listenerManager) {
-        BuildProgressLogger buildProgressLogger = new BuildProgressLogger(progressLoggerFactory);
-        listenerManager.addListener(new BuildProgressFilter(buildProgressLogger));
-        return buildProgressLogger;
-    }
-
-    protected CacheFactory createCacheFactory(FileLockManager fileLockManager, ExecutorFactory executorFactory) {
-        return new DefaultCacheFactory(fileLockManager, executorFactory);
+    protected CacheFactory createCacheFactory(FileLockManager fileLockManager, ExecutorFactory executorFactory, ProgressLoggerFactory progressLoggerFactory) {
+        return new DefaultCacheFactory(fileLockManager, executorFactory, progressLoggerFactory);
     }
 
     ClassLoaderRegistry createClassLoaderRegistry(ClassPathRegistry classPathRegistry, LegacyTypesSupport legacyTypesSupport) {
@@ -212,7 +209,8 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
             return new FlatClassLoaderRegistry(getClass().getClassLoader());
         }
 
-        return new DefaultClassLoaderRegistry(classPathRegistry, legacyTypesSupport);
+        // Use DirectInstantiator here to avoid setting up the instantiation infrastructure early
+        return new DefaultClassLoaderRegistry(classPathRegistry, legacyTypesSupport, DirectInstantiator.INSTANCE);
     }
 
     LegacyTypesSupport createLegacyTypesSupport() {
@@ -233,16 +231,12 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return messagingServices.get(MessagingServer.class);
     }
 
-    ClassGenerator createClassGenerator() {
-        return new AsmBackedClassGenerator();
-    }
-
     Instantiator createInstantiator(InstantiatorFactory instantiatorFactory) {
-        return instantiatorFactory.decorate();
+        return instantiatorFactory.decorateLenient();
     }
 
     CrossBuildInMemoryCacheFactory createCrossBuildInMemoryCacheFactory(ListenerManager listenerManager) {
-        return new CrossBuildInMemoryCacheFactory(listenerManager);
+        return new DefaultCrossBuildInMemoryCacheFactory(listenerManager);
     }
 
     InMemoryCacheDecoratorFactory createInMemoryTaskArtifactCache(CrossBuildInMemoryCacheFactory cacheFactory) {
@@ -252,11 +246,6 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
     DirectoryFileTreeFactory createDirectoryFileTreeFactory(Factory<PatternSet> patternSetFactory, FileSystem fileSystem) {
         return new DefaultDirectoryFileTreeFactory(patternSetFactory, fileSystem);
     }
-
-    FileCollectionFactory createFileCollectionFactory() {
-        return new DefaultFileCollectionFactory();
-    }
-
 
     ModelRuleExtractor createModelRuleInspector(List<MethodModelRuleExtractor> extractors, ModelSchemaStore modelSchemaStore, StructBindingsStore structBindingsStore, ManagedProxyFactory managedProxyFactory) {
         List<MethodModelRuleExtractor> coreExtractors = MethodModelRuleExtractors.coreExtractors(modelSchemaStore);
@@ -299,8 +288,8 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return new StringInterner();
     }
 
-    InstantiatorFactory createInstantiatorFactory(ClassGenerator classGenerator, CrossBuildInMemoryCacheFactory cacheFactory) {
-        return new DefaultInstantiatorFactory(classGenerator, cacheFactory);
+    InstantiatorFactory createInstantiatorFactory(CrossBuildInMemoryCacheFactory cacheFactory, List<InjectAnnotationHandler> annotationHandlers) {
+        return new DefaultInstantiatorFactory(cacheFactory, annotationHandlers);
     }
 
     GradleUserHomeScopeServiceRegistry createGradleUserHomeScopeServiceRegistry(ServiceRegistry globalServices) {
@@ -319,8 +308,14 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return new DefaultMemoryManager(osMemoryInfo, jvmMemoryInfo, listenerManager, executorFactory);
     }
 
-    ObjectFactory createObjectFactory(InstantiatorFactory instantiatorFactory, ServiceRegistry services) {
-        return new DefaultObjectFactory(instantiatorFactory.injectAndDecorate(services), NamedObjectInstantiator.INSTANCE);
+    ObjectFactory createObjectFactory(InstantiatorFactory instantiatorFactory, ServiceRegistry services, FileResolver fileResolver, DirectoryFileTreeFactory directoryFileTreeFactory, FileCollectionFactory fileCollectionFactory) {
+        return new DefaultObjectFactory(
+            instantiatorFactory.injectAndDecorate(services),
+            NamedObjectInstantiator.INSTANCE,
+            fileResolver,
+            directoryFileTreeFactory,
+            new DefaultFilePropertyFactory(fileResolver),
+            fileCollectionFactory);
     }
 
     ProviderFactory createProviderFactory() {
@@ -351,15 +346,19 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return new DefaultBuildOperationIdFactory();
     }
 
-    ContentHasherFactory createHasherFactory() {
-        return new DefaultContentHasherFactory();
+    ProgressLoggerFactory createProgressLoggerFactory(OutputEventListener outputEventListener, Clock clock, BuildOperationIdFactory buildOperationIdFactory) {
+        return new DefaultProgressLoggerFactory(new ProgressLoggingBridge(outputEventListener), clock, buildOperationIdFactory);
     }
 
-    StreamHasher createStreamHasher(ContentHasherFactory hasherFactory) {
-        return new DefaultStreamHasher(hasherFactory);
+    StreamHasher createStreamHasher() {
+        return new DefaultStreamHasher();
     }
 
     Clock createClock() {
         return Time.clock();
+    }
+
+    ExecutionStateChangeDetector createExecutionStateChangeDetector() {
+        return new DefaultExecutionStateChangeDetector();
     }
 }

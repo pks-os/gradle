@@ -25,21 +25,24 @@ import org.gradle.api.artifacts.ComponentMetadataSupplierDetails;
 import org.gradle.api.artifacts.ComponentMetadataVersionLister;
 import org.gradle.api.artifacts.repositories.ArtifactRepository;
 import org.gradle.api.artifacts.repositories.MetadataSupplierAware;
+import org.gradle.api.artifacts.repositories.RepositoryContentDescriptor;
 import org.gradle.api.artifacts.repositories.RepositoryResourceAccessor;
-import org.gradle.api.internal.InstantiatorFactory;
+import org.gradle.internal.instantiation.InstantiatorFactory;
 import org.gradle.api.internal.artifacts.repositories.resolver.ExternalRepositoryResourceAccessor;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransport;
-import org.gradle.api.internal.changedetection.state.isolation.IsolatableFactory;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.action.ConfigurableRule;
 import org.gradle.internal.action.DefaultConfigurableRule;
 import org.gradle.internal.action.DefaultConfigurableRules;
 import org.gradle.internal.action.InstantiatingAction;
+import org.gradle.internal.isolation.IsolatableFactory;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resolve.caching.ImplicitInputsCapturingInstantiator;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.service.DefaultServiceRegistry;
 
+import javax.annotation.Nullable;
 import java.net.URI;
 
 public abstract class AbstractArtifactRepository implements ArtifactRepositoryInternal, MetadataSupplierAware {
@@ -49,6 +52,13 @@ public abstract class AbstractArtifactRepository implements ArtifactRepositoryIn
     private Class<? extends ComponentMetadataVersionLister> componentMetadataListerRuleClass;
     private Action<? super ActionConfiguration> componentMetadataSupplierRuleConfiguration;
     private Action<? super ActionConfiguration> componentMetadataListerRuleConfiguration;
+    private final ObjectFactory objectFactory;
+    private final RepositoryContentDescriptorInternal repositoryContentDescriptor;
+
+    protected AbstractArtifactRepository(ObjectFactory objectFactory) {
+        this.objectFactory = objectFactory;
+        this.repositoryContentDescriptor = createRepositoryDescriptor();
+    }
 
     public void onAddToContainer(NamedDomainObjectCollection<ArtifactRepository> container) {
         isPartOfContainer = true;
@@ -93,6 +103,20 @@ public abstract class AbstractArtifactRepository implements ArtifactRepositoryIn
         this.componentMetadataListerRuleConfiguration = configureAction;
     }
 
+    protected RepositoryContentDescriptorInternal createRepositoryDescriptor() {
+        return new DefaultRepositoryContentDescriptor();
+    }
+
+    @Nullable
+    public Action<? super ArtifactResolutionDetails> getContentFilter() {
+        return repositoryContentDescriptor.toContentFilter();
+    }
+
+    @Override
+    public void content(Action<? super RepositoryContentDescriptor> configureAction) {
+        configureAction.execute(repositoryContentDescriptor);
+    }
+
     InstantiatingAction<ComponentMetadataSupplierDetails> createComponentMetadataSupplierFactory(Instantiator instantiator, IsolatableFactory isolatableFactory) {
         if (componentMetadataSupplierRuleClass != null) {
             return createRuleAction(instantiator, DefaultConfigurableRule.<ComponentMetadataSupplierDetails>of(componentMetadataSupplierRuleClass, componentMetadataSupplierRuleConfiguration, isolatableFactory));
@@ -113,8 +137,6 @@ public abstract class AbstractArtifactRepository implements ArtifactRepositoryIn
      * Creates a service registry giving access to the services we want to expose to rules and returns an instantiator that uses this service registry.
      *
      * @param transport the transport used to create the repository accessor
-     * @param rootUri
-     * @param externalResourcesFileStore
      * @return a dependency injecting instantiator, aware of services we want to expose
      */
     ImplicitInputsCapturingInstantiator createInjectorForMetadataSuppliers(final RepositoryTransport transport, InstantiatorFactory instantiatorFactory, final URI rootUri, final FileStore<String> externalResourcesFileStore) {
@@ -124,10 +146,11 @@ public abstract class AbstractArtifactRepository implements ArtifactRepositoryIn
                 return createRepositoryAccessor(transport, rootUri, externalResourcesFileStore);
             }
         });
+        registry.add(ObjectFactory.class, objectFactory);
         return new ImplicitInputsCapturingInstantiator(registry, instantiatorFactory);
     }
 
-    private RepositoryResourceAccessor createRepositoryAccessor(RepositoryTransport transport, URI rootUri, FileStore<String> externalResourcesFileStore) {
+    protected RepositoryResourceAccessor createRepositoryAccessor(RepositoryTransport transport, URI rootUri, FileStore<String> externalResourcesFileStore) {
         return new ExternalRepositoryResourceAccessor(rootUri, transport.getResourceAccessor(), externalResourcesFileStore);
     }
 
@@ -140,5 +163,4 @@ public abstract class AbstractArtifactRepository implements ArtifactRepositoryIn
             }
         });
     }
-
 }

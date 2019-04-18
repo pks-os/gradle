@@ -16,30 +16,39 @@
 
 package org.gradle.api.internal.tasks;
 
-import org.gradle.api.internal.changedetection.TaskArtifactState;
-import org.gradle.api.internal.tasks.execution.TaskProperties;
-import org.gradle.caching.internal.tasks.TaskOutputCachingBuildCacheKey;
+import com.google.common.collect.ImmutableSortedMap;
+import org.gradle.api.internal.OverlappingOutputs;
+import org.gradle.api.internal.changedetection.TaskExecutionMode;
+import org.gradle.api.internal.tasks.properties.TaskProperties;
+import org.gradle.execution.plan.LocalTaskNode;
+import org.gradle.internal.execution.history.AfterPreviousExecutionState;
+import org.gradle.internal.execution.history.BeforeExecutionState;
+import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
+import org.gradle.internal.operations.ExecutingBuildOperation;
 
 import javax.annotation.Nullable;
-import java.util.List;
+import java.util.Optional;
 
 public interface TaskExecutionContext {
 
-    TaskArtifactState getTaskArtifactState();
+    LocalTaskNode getLocalTaskNode();
 
-    void setTaskArtifactState(TaskArtifactState taskArtifactState);
-
-    TaskOutputCachingBuildCacheKey getBuildCacheKey();
-
-    void setBuildCacheKey(TaskOutputCachingBuildCacheKey cacheKey);
-
-    /**
-     * The information about the origin where the tasks outputs were first created, if reusing outputs.
-     */
     @Nullable
-    OriginTaskExecutionMetadata getOriginExecutionMetadata();
+    AfterPreviousExecutionState getAfterPreviousExecution();
 
-    void setOriginExecutionMetadata(OriginTaskExecutionMetadata originExecutionMetadata);
+    void setAfterPreviousExecution(@Nullable AfterPreviousExecutionState previousExecution);
+
+    TaskExecutionMode getTaskExecutionMode();
+
+    Optional<BeforeExecutionState> getBeforeExecutionState();
+
+    void setBeforeExecutionState(BeforeExecutionState beforeExecutionState);
+
+    void setTaskExecutionMode(TaskExecutionMode taskExecutionMode);
+
+    ImmutableSortedMap<String, CurrentFileCollectionFingerprint> getOutputFilesBeforeExecution();
+
+    void setOutputFilesBeforeExecution(ImmutableSortedMap<String, CurrentFileCollectionFingerprint> outputFilesBeforeExecution);
 
     /**
      * Sets the execution time of the task to be the elapsed time since start to now.
@@ -54,19 +63,30 @@ public interface TaskExecutionContext {
      */
     long markExecutionTime();
 
-    /**
-     * The previously marked execution time.
-     *
-     * Throws if the execution time was not previously marked.
-     */
-    long getExecutionTime();
-
-    @Nullable
-    List<String> getUpToDateMessages();
-
-    void setUpToDateMessages(List<String> upToDateMessages);
-
-    void setTaskProperties(TaskProperties taskProperties);
+    void setTaskProperties(TaskProperties properties);
 
     TaskProperties getTaskProperties();
+
+    /**
+     * Returns if caching for this task is enabled.
+     */
+    boolean isTaskCachingEnabled();
+
+    void setTaskCachingEnabled(boolean enabled);
+
+    Optional<OverlappingOutputs> getOverlappingOutputs();
+
+    void setOverlappingOutputs(OverlappingOutputs overlappingOutputs);
+
+    /**
+     * Gets and clears the build operation designed to measure the time taken
+     * by capturing input snapshotting and cache key calculation.
+     */
+    Optional<ExecutingBuildOperation> removeSnapshotTaskInputsBuildOperation();
+
+    /**
+     * Sets the build operation designed to measure the time taken
+     * by capturing input snapshotting and cache key calculation.
+     */
+    void setSnapshotTaskInputsBuildOperation(ExecutingBuildOperation  operation);
 }

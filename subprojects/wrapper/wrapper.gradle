@@ -1,3 +1,4 @@
+import java.util.jar.Attributes
 import org.gradle.gradlebuild.unittestandcompile.ModuleType
 
 /*
@@ -33,31 +34,12 @@ testFixtures {
     from(':core')
 }
 
-ext {
-    wrapperBuildReceipt = "build-receipt.properties"
-}
-
-normalization {
-    runtimeClasspath {
-        ignore wrapperBuildReceipt
-    }
-}
-
-def generatedTestResourcesDir = gradlebuildJava.generatedTestResourcesDir
-
-task wrapperBuildReceiptResource(type: Copy) {
-    from {
-        tasks.getByPath(':createBuildReceipt').outputs.files
-    }
-    destinationDir = file("${generatedTestResourcesDir}")
-}
-sourceSets.test.output.dir generatedTestResourcesDir, builtBy: wrapperBuildReceiptResource
-
-task executableJar(type: Jar) {
-    // gradle-wrapper.jar will be part of the plugins.jar - so it needs to be identical for now
-    reproducibleFileOrder = true
-    preserveFileTimestamps = false
+tasks.register("executableJar", Jar) {
     archiveName = 'gradle-wrapper.jar'
+    manifest {
+        attributes.remove(Attributes.Name.IMPLEMENTATION_VERSION.toString())
+        attributes([(Attributes.Name.IMPLEMENTATION_TITLE.toString()): "Gradle Wrapper"])
+    }
     from sourceSets.main.output
     from configurations.runtime.allDependencies.withType(ProjectDependency).collect { it.dependencyProject.sourceSets.main.output }
 }

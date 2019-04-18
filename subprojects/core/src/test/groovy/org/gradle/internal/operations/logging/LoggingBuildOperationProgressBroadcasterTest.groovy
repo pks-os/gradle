@@ -36,7 +36,14 @@ class LoggingBuildOperationProgressBroadcasterTest extends Specification {
     @Shared
     def operationId = Mock(OperationIdentifier)
 
+    @Shared
+    def fallbackOperationId = Mock(OperationIdentifier)
+
     LoggingBuildOperationProgressBroadcaster bridge = new LoggingBuildOperationProgressBroadcaster(outputEventListenerManager, buildOperationListener)
+
+    def setup() {
+        bridge.rootBuildOperation = fallbackOperationId
+    }
 
     @Unroll
     def "forwards #eventType with operationId"() {
@@ -51,13 +58,16 @@ class LoggingBuildOperationProgressBroadcasterTest extends Specification {
 
 
         when:
-        bridge.onOutput(eventWithNoBuildOperationId)
+        bridge.onOutput(eventWithFallbackBuildOperationId)
 
         then:
-        0 * buildOperationListener.progress(_, _)
+        1 * buildOperationListener.progress(_, _) >> {
+            assert it[0] == fallbackOperationId
+            assert it[1].details == eventWithFallbackBuildOperationId
+        }
 
         where:
-        eventType             | eventWithBuildOperationId                                          | eventWithNoBuildOperationId
+        eventType             | eventWithBuildOperationId                                          | eventWithFallbackBuildOperationId
         LogEvent              | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, operationId)        | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, null)
         StyledTextOutputEvent | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, operationId, 'm') | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, null, 'm')
         ProgressStartEvent    | progressStartEvent(operationId)                                    | progressStartEvent(null)
@@ -87,6 +97,6 @@ class LoggingBuildOperationProgressBroadcasterTest extends Specification {
     }
 
     private ProgressStartEvent progressStartEvent(OperationIdentifier operationId, String header = 'header') {
-        new ProgressStartEvent(null, null, 0, 'c', 'd', 'sd', header, 's', 0, false, operationId, null, BuildOperationCategory.UNCATEGORIZED)
+        new ProgressStartEvent(null, null, 0, 'c', 'd', header, 's', 0, false, operationId, BuildOperationCategory.UNCATEGORIZED)
     }
 }

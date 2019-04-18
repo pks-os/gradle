@@ -447,6 +447,43 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
+    def "copy from task provider"() {
+        given:
+        buildScript '''
+            configurations { compile }
+            dependencies { compile files('a.jar') }
+            def fileProducer = tasks.register("fileProducer") {
+                outputs.file 'build/out.txt'
+                doLast {
+                    file('build/out.txt').text = 'some content'
+                }
+            }
+            def dirProducer = tasks.register("dirProducer") {
+                outputs.dir 'build/outdir'
+                doLast {
+                    file('build/outdir').mkdirs()
+                    file('build/outdir/file1.txt').text = 'some content'
+                    file('build/outdir/sub').mkdirs()
+                    file('build/outdir/sub/file2.txt').text = 'some content'
+                }
+            }
+            task copy(type: Copy) {
+                from fileProducer, dirProducer
+                into 'dest'
+            }
+        '''.stripIndent()
+
+        when:
+        run 'copy', '-i'
+
+        then:
+        file('dest').assertHasDescendants(
+            'out.txt',
+            'file1.txt',
+            'sub/file2.txt'
+        )
+    }
+
     def "copy with CopySpec"() {
         given:
         buildScript '''
@@ -1219,23 +1256,60 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         "filteringCharset"   | "'iso8859-1'"                | "'utf-8'"
     }
 
-    def "null action is deprecated for from and into"() {
+    @Unroll
+    def "null action is forbidden for #method"() {
         given:
-        buildScript '''
+        buildScript """
             task copy(type: Copy) {
                 into "out"
-                from 'src', null
-                into 'dest', null
+                from 'src'
+                ${method} 'dest', null
             }
-        '''.stripIndent()
+        """
+
+        expect:
+        fails 'copy'
+        failure.assertHasCause("Gradle does not allow passing null for the configuration action for CopySpec.${method}().")
+
+        where:
+        method << ["from", "into"]
+    }
+
+
+    @Unroll
+    def "task output caching is disabled when #description is used"() {
+        file("src.txt").createNewFile()
+        buildFile << """
+            task copy(type: Copy) {
+                outputs.cacheIf { true }
+                ${mutation}
+                from "src.txt"
+                into "destination"
+            }
+        """
+
+        withBuildCache().run "copy"
+        file("destination").deleteDir()
 
         when:
-        executer.expectDeprecationWarnings(2)
-        executer.withFullDeprecationStackTraceDisabled()
-        run 'copy'
+        withBuildCache().run"copy"
+
         then:
-        output.contains "Gradle does not allow passing null for the configuration action for CopySpec.from(). This behaviour has been deprecated and is scheduled to be removed in Gradle 5.0"
-        output.contains "Gradle does not allow passing null for the configuration action for CopySpec.into(). This behaviour has been deprecated and is scheduled to be removed in Gradle 5.0"
+        skippedTasks.empty
+
+        where:
+        description                 | mutation
+        "outputs.cacheIf { false }" | "outputs.cacheIf { false }"
+        "eachFile(Closure)"         | "eachFile {}"
+        "eachFile(Action)"          | "eachFile(org.gradle.internal.Actions.doNothing())"
+        "expand(Map)"               | "expand([:])"
+        "filter(Closure)"           | "filter {}"
+        "filter(Class)"             | "filter(PushbackReader)"
+        "filter(Map, Class)"        | "filter([:], PushbackReader)"
+        "filter(Transformer)"       | "filter(org.gradle.internal.Transformers.noOpTransformer())"
+        "rename(Closure)"           | "rename {}"
+        "rename(Pattern, String)"   | "rename(/(.*)/, '\$1')"
+        "rename(Transformer)"       | "rename(org.gradle.internal.Transformers.noOpTransformer())"
     }
 
 }

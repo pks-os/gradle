@@ -17,12 +17,15 @@
 package org.gradle.api.internal.tasks.compile;
 
 import org.gradle.api.internal.tasks.compile.incremental.processing.AnnotationProcessingResult;
+import org.gradle.api.internal.tasks.compile.incremental.processing.AnnotationProcessorResult;
+import org.gradle.api.internal.tasks.compile.incremental.processing.IncrementalAnnotationProcessorType;
 import org.gradle.api.internal.tasks.compile.processing.AggregatingProcessor;
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDeclaration;
 import org.gradle.api.internal.tasks.compile.processing.DynamicProcessor;
-import org.gradle.api.internal.tasks.compile.processing.IncrementalAnnotationProcessorType;
 import org.gradle.api.internal.tasks.compile.processing.IsolatingProcessor;
 import org.gradle.api.internal.tasks.compile.processing.NonIncrementalProcessor;
+import org.gradle.api.internal.tasks.compile.processing.SupportedOptionsCollectingProcessor;
+import org.gradle.api.internal.tasks.compile.processing.TimeTrackingProcessor;
 import org.gradle.internal.classloader.FilteringClassLoader;
 import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
@@ -65,6 +68,10 @@ class AnnotationProcessingCompileTask implements JavaCompiler.CompilationTask {
     }
 
     @Override
+    public void addModules(Iterable<String> moduleNames) {
+    }
+
+    @Override
     public void setProcessors(Iterable<? extends Processor> processors) {
         throw new UnsupportedOperationException("This decorator already handles annotation processing");
     }
@@ -91,19 +98,42 @@ class AnnotationProcessingCompileTask implements JavaCompiler.CompilationTask {
     private void setupProcessors() {
         processorClassloader = createProcessorClassLoader();
         List<Processor> processors = new ArrayList<Processor>(processorDeclarations.size());
-        for (AnnotationProcessorDeclaration declaredProcessor : processorDeclarations) {
-            Class<?> processorClass = loadProcessor(declaredProcessor);
-            Processor processor = instantiateProcessor(processorClass);
-            processor = decorateForIncrementalProcessing(processor, declaredProcessor.getType());
-            processors.add(processor);
+        if (!processorDeclarations.isEmpty()) {
+            SupportedOptionsCollectingProcessor supportedOptionsCollectingProcessor = new SupportedOptionsCollectingProcessor();
+            for (AnnotationProcessorDeclaration declaredProcessor : processorDeclarations) {
+                AnnotationProcessorResult processorResult = new AnnotationProcessorResult(result, declaredProcessor.getClassName());
+                result.getAnnotationProcessorResults().add(processorResult);
+
+                Class<?> processorClass = loadProcessor(declaredProcessor);
+                Processor processor = instantiateProcessor(processorClass);
+                supportedOptionsCollectingProcessor.addProcessor(processor);
+                processor = decorateForIncrementalProcessing(processor, declaredProcessor.getType(), processorResult);
+                processor = decorateForTimeTracking(processor, processorResult);
+                processors.add(processor);
+            }
+            processors.add(supportedOptionsCollectingProcessor);
         }
         delegate.setProcessors(processors);
     }
 
     private URLClassLoader createProcessorClassLoader() {
+        return new URLClassLoader(
+            DefaultClassPath.of(annotationProcessorPath).getAsURLArray(),
+            new FilteringClassLoader(delegate.getClass().getClassLoader(), getExtraAllowedPackages())
+        );
+    }
+
+    /**
+     * Many popular annotation processors like lombok need access to compiler internals
+     * to do their magic, e.g. to inspect or even change method bodies. This is not valid
+     * according to the annotation processing spec, but forbidding it would upset a lot of
+     * our users.
+     */
+    private FilteringClassLoader.Spec getExtraAllowedPackages() {
         FilteringClassLoader.Spec spec = new FilteringClassLoader.Spec();
         spec.allowPackage("com.sun.tools.javac");
-        return new URLClassLoader(DefaultClassPath.of(annotationProcessorPath).getAsURLArray(), new FilteringClassLoader(Processor.class.getClassLoader(), spec));
+        spec.allowPackage("com.sun.source");
+        return spec;
     }
 
     private Class<?> loadProcessor(AnnotationProcessorDeclaration declaredProcessor) {
@@ -116,23 +146,27 @@ class AnnotationProcessingCompileTask implements JavaCompiler.CompilationTask {
 
     private Processor instantiateProcessor(Class<?> processorClass) {
         try {
-            return (Processor) processorClass.newInstance();
+            return (Processor) processorClass.getConstructor().newInstance();
         } catch (Exception e) {
             throw new IllegalArgumentException("Could not instantiate annotation processor '" + processorClass.getName() + "'");
         }
     }
 
-    private Processor decorateForIncrementalProcessing(Processor processor, IncrementalAnnotationProcessorType type) {
+    private Processor decorateForIncrementalProcessing(Processor processor, IncrementalAnnotationProcessorType type, AnnotationProcessorResult processorResult) {
         switch (type) {
             case ISOLATING:
-                return new IsolatingProcessor(processor, result);
+                return new IsolatingProcessor(processor, processorResult);
             case AGGREGATING:
-                return new AggregatingProcessor(processor, result);
+                return new AggregatingProcessor(processor, processorResult);
             case DYNAMIC:
-                return new DynamicProcessor(processor, result);
+                return new DynamicProcessor(processor, processorResult);
             default:
-                return new NonIncrementalProcessor(processor, result);
+                return new NonIncrementalProcessor(processor, processorResult);
         }
+    }
+
+    private Processor decorateForTimeTracking(Processor processor, AnnotationProcessorResult processorResult) {
+        return new TimeTrackingProcessor(processor, processorResult);
     }
 
     private void cleanupProcessors() {

@@ -82,7 +82,7 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         }
 
         publishPlugin """
-                // can load plugin dependended on
+                // can load plugin dependent on
                 project.apply plugin: 'test-plugin-2'
     
                 // Can see dependency classes
@@ -269,7 +269,7 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
     def "failure due to plugin instantiation throwing"() {
         when:
         pluginBuilder.with {
-            addNonConstructablePlugin(PLUGIN_ID, "OtherPlugin")
+            addNonConstructiblePlugin(PLUGIN_ID, "OtherPlugin")
             publishAs(GROUP, ARTIFACT, VERSION, pluginRepo, executer).allowAll()
         }
 
